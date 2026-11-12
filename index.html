@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Oildeck</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Syne:wght@600;700;800&display=swap">
+<style>/* Habillage Coulée : le panneau prend les couleurs du fond en cours (--c0..--c6, posées par paintPanel). */
+:root {
+  --ink: #fff;
+  --muted: rgba(255, 255, 255, .72);
+  --line: rgba(255, 255, 255, .14);
+  --card: #f6f0e6;
+  --panel-w: 352px;
+  --hand-h: 150px;
+  --c0: #170530; --c1: #3d0d61; --c2: #7a29ad; --c3: #cc217a; --c4: #ff5c4d; --c5: #701240; --c6: #ff9a6a;
+  --f-ui: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --f-flow: "Syne", "Manrope", sans-serif;
+  --panel-bg: linear-gradient(170deg, color-mix(in oklab, var(--c0) 84%, transparent), color-mix(in oklab, var(--c0) 70%, #000 30%));
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color-scheme: dark; color: var(--ink);
+  font: 13px/1.4 var(--f-ui); user-select: none; }
+#bg { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+/* ---------- carte ---------- */
+#stage { position: fixed; inset: 0 var(--panel-w) var(--hand-h) 0; perspective: 1100px; pointer-events: none; }
+#card { position: absolute; left: 0; top: 0; width: 210px; height: 294px; transform-style: preserve-3d;
+  pointer-events: auto; cursor: grab; will-change: transform; }
+#card.dragging { cursor: grabbing; }
+.face { position: absolute; inset: 0; border-radius: 14px; backface-visibility: hidden; overflow: hidden; }
+.front { background: var(--card); padding: 11px;
+  box-shadow: var(--sx, 0) var(--sy, 14px) 30px rgba(0, 0, 0, .55), inset 0 0 0 2px rgba(0, 0, 0, .12); }
+#face { width: 100%; height: 100%; display: block; border-radius: 7px; image-rendering: pixelated;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .25); }
+.corner { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font: 700 13px/1 Consolas, "Courier New", monospace; color: #2a1d38; letter-spacing: .5px;
+  background: var(--card); padding: 4px 4px 5px; border-radius: 0 0 6px 0; pointer-events: none; }
+.corner i { width: 10px; height: 13px; background: var(--drop, #cc217a);
+  clip-path: polygon(50% 0, 85% 45%, 100% 70%, 85% 92%, 50% 100%, 15% 92%, 0 70%, 15% 45%); }
+.tl { left: 6px; top: 6px; }
+.br { right: 6px; bottom: 6px; transform: rotate(180deg); }
+.shine { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
+  background: radial-gradient(circle at var(--mx, 30%) var(--my, 20%), rgba(255, 255, 255, .75), transparent 55%); }
+.back { transform: rotateY(180deg); background: repeating-linear-gradient(45deg, #2a1640 0 8px, #33194d 8px 16px);
+  border: 10px solid var(--card); display: flex; flex-direction: column; padding: 14px 12px; gap: 8px;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .55); }
+.back-title { font: 700 13px Consolas, monospace; text-align: center; color: #ffe9c9;
+  background: rgba(0, 0, 0, .45); border-radius: 6px; padding: 6px 4px; }
+#stats { margin: 0; flex: 1; display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-content: start;
+  background: #f6f0e6; color: #2a1d38; border-radius: 8px; padding: 9px 10px; font: 12px/1.25 Consolas, monospace; }
+#stats dt { opacity: .7; } #stats dd { margin: 0; font-weight: 700; text-align: right; }
+/* ce que règle la molette sur la carte */
+#live { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); margin: 0; display: flex; gap: 8px; align-items: baseline;
+  padding: 7px 14px; border-radius: 999px; white-space: nowrap; font: 600 13px var(--f-ui);
+  background: color-mix(in oklab, var(--c0) 80%, rgba(0, 0, 0, .4)); backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c6) 30%, transparent); }
+#live span { color: var(--muted); }
+#live b { color: var(--c6); font: 700 14px var(--f-flow); }
+#live output { font: 700 14px var(--f-flow); }
+#hint { position: absolute; left: 0; right: 0; bottom: 6px; margin: 0; text-align: center; color: var(--ink);
+  font-size: 12px; opacity: .75; text-shadow: 0 1px 4px rgba(0, 0, 0, .8); }
+
+/* ---------- rangée de cartes (éventail) ---------- */
+#hand { position: fixed; left: 0; right: var(--panel-w); bottom: 0; height: var(--hand-h); display: flex;
+  align-items: center; gap: 16px; padding: 0 24px; }
+#cards { position: relative; flex: 1; align-self: stretch; min-width: 0; }
+.mini { flex: none; width: 72px; height: 100px; border-radius: 8px; background: var(--card); border: 0; padding: 5px;
+  cursor: pointer; position: relative; transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), box-shadow .18s;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .5); }
+.mini img { width: 100%; height: 100%; display: block; border-radius: 4px; image-rendering: pixelated; }
+.mini span { position: absolute; left: 0; right: 0; bottom: -17px; font-size: 11px; font-weight: 700; color: var(--ink);
+  text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.mini:hover, .mini:focus-visible { transform: translateY(-14px) rotate(-3deg); box-shadow: 0 16px 24px rgba(0, 0, 0, .6); outline: none; }
+.mini.active { box-shadow: 0 0 0 3px var(--c6), 0 6px 14px rgba(0, 0, 0, .5); }
+#cards .mini { position: absolute; left: 0; bottom: 30px;
+  transform: translateX(var(--x, 0)) translateY(var(--y, 0)) rotate(var(--r, 0));
+  transition: transform .22s cubic-bezier(.3, 1.5, .5, 1), box-shadow .18s; }
+#cards .mini:hover, #cards .mini:focus-visible { transform: translateX(var(--x, 0)) translateY(calc(var(--y, 0) - 18px)) rotate(0deg);
+  z-index: 999 !important; }
+#cards.tight .mini span { opacity: 0; transition: opacity .15s; }
+#cards.tight .mini:hover span { opacity: 1; }
+.deck { background: repeating-linear-gradient(45deg, #2a1640 0 6px, #33194d 6px 12px); border: 5px solid var(--card);
+  box-shadow: 4px 4px 0 -1px var(--card), 8px 8px 0 -2px #d9d0c4, 0 10px 18px rgba(0, 0, 0, .6); }
+.deck span { position: static; display: grid; place-items: center; height: 100%; font: 800 12px var(--f-ui);
+  color: #ffe9c9; text-shadow: none; }
+
+/* ---------- panneau Coulée ---------- */
+#panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: calc(var(--panel-w) - 24px);
+  background: var(--panel-bg); backdrop-filter: blur(18px) saturate(1.4); border-radius: 22px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c6) 30%, transparent), 0 22px 50px rgba(0, 0, 0, .45);
+  display: flex; flex-direction: column; overflow: hidden; }
+#panel header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 18px 20px 0; }
+h1 { margin: 0; font: 800 19px/1 var(--f-flow); letter-spacing: .2px; color: var(--ink); }
+h1 span { color: var(--c6); }
+.sub { margin: 0; padding: 4px 20px 6px; font: 600 12.5px var(--f-ui); color: var(--muted); }
+.toggles { display: flex; gap: 6px; }
+.toggles button { background: rgba(0, 0, 0, .25); color: var(--ink); border: 0; border-radius: 999px;
+  padding: 5px 11px; font: 700 12px var(--f-ui); cursor: pointer; }
+.toggles button:hover { background: rgba(0, 0, 0, .4); }
+.toggles button[aria-pressed="true"] { opacity: .5; text-decoration: line-through; }
+#controls { flex: 1; overflow-y: auto; padding: 0 20px 10px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .25) transparent; }
+.group h2 { margin: 16px 0 0; font: 700 22px/1 var(--f-flow); text-transform: lowercase; color: color-mix(in oklab, var(--c6) 60%, #fff); }
+.row { display: grid; gap: 2px; padding: 6px 0 2px; }
+.rl { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rl label { font: 600 14px var(--f-ui); cursor: default; }
+.row.live label { color: var(--c6); }
+.livetag { display: none; margin-left: 7px; font: 800 11px var(--f-ui); letter-spacing: .8px; text-transform: uppercase; color: var(--c6); }
+.row.live .livetag { display: inline; }
+.val { all: unset; width: 76px; text-align: right; font: 700 17px var(--f-flow); font-variant-numeric: tabular-nums; cursor: text;
+  border-radius: 6px; padding: 1px 4px; }
+.val:hover { background: rgba(0, 0, 0, .2); }
+.val:focus { background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px var(--c6); }
+.row input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; margin: 0; background: transparent; cursor: pointer; }
+.row input[type="range"]::-webkit-slider-runnable-track { height: 10px; border-radius: 99px; background: var(--track); }
+.row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -6px; border-radius: 50%;
+  background: var(--thumb); border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .5); transition: transform .12s; }
+.row input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
+.row input[type="range"]:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 99px; }
+.swatches { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding-top: 8px; }
+.swatch { display: flex; flex-direction: column; align-items: center; gap: 4px; font: 600 11px var(--f-ui); color: var(--muted); text-align: center; min-width: 0; }
+.swatch span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { width: 100%; height: 40px; border: 0; border-radius: 12px; padding: 0; cursor: pointer; background: var(--c, #000);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); transition: transform .15s; }
+.chip:hover { transform: translateY(-2px); }
+.chip:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.export { padding: 12px 20px 18px; display: grid; gap: 9px; }
+.export h2 { margin: 0; font: 700 22px/1 var(--f-flow); text-transform: lowercase; color: color-mix(in oklab, var(--c6) 60%, #fff); }
+#name { width: 100%; background: rgba(0, 0, 0, .28); color: var(--ink); border: 0; border-radius: 12px;
+  padding: 10px 14px; font: 600 15px var(--f-ui); user-select: text; }
+#name:focus { outline: none; box-shadow: inset 0 0 0 1px var(--c6); }
+#saveBtn, #exportBtn { width: 100%; padding: 11px; border-radius: 999px; cursor: pointer; font: 800 14px var(--f-ui); transition: transform .12s, filter .12s; }
+#saveBtn { color: var(--ink); background: transparent; border: 0; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); }
+#saveBtn:hover { background: rgba(255, 255, 255, .08); }
+#exportBtn { border: 0; color: #140b12; background: linear-gradient(90deg, var(--c4), var(--c6)); }
+#exportBtn:hover { filter: brightness(1.08); }
+#saveBtn:active, #exportBtn:active { transform: scale(.97); }
+#exportBtn:disabled { filter: grayscale(1); opacity: .5; cursor: not-allowed; }
+.check { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+#status { min-height: 18px; margin: 0; font-size: 12.5px; color: var(--muted); }
+
+/* ---------- menu clic droit du deck ---------- */
+#ctx { position: fixed; z-index: 2000; min-width: 190px; padding: 8px; border-radius: 14px; display: flex; flex-direction: column; gap: 6px;
+  background: color-mix(in oklab, var(--c0) 88%, #000); box-shadow: inset 0 0 0 1px var(--line), 0 12px 30px rgba(0, 0, 0, .6); }
+#ctx[hidden] { display: none; }
+#ctx p { margin: 2px 4px; color: var(--muted); font-size: 12.5px; }
+#ctx input { background: rgba(0, 0, 0, .35); color: var(--ink); border: 0; border-radius: 8px; padding: 7px 9px; font: 600 13px var(--f-ui); user-select: text; }
+#ctx button { text-align: left; background: none; border: 0; color: var(--ink); padding: 7px 9px; border-radius: 8px; cursor: pointer; font: 600 13px var(--f-ui); }
+#ctx button:hover { background: rgba(255, 255, 255, .1); }
+#ctx .danger { color: #ff8a8a; }
+
+/* ---------- sélecteur de couleur ---------- */
+#picker { position: fixed; z-index: 2100; width: 260px; padding: 12px 14px 14px; border-radius: 18px; display: grid; gap: 10px;
+  background: color-mix(in oklab, var(--c0) 88%, #000); box-shadow: inset 0 0 0 1px var(--line), 0 16px 40px rgba(0, 0, 0, .65); }
+#picker[hidden] { display: none; }
+.pk-head { margin: 0; display: flex; align-items: center; gap: 9px; font: 700 15px var(--f-flow); }
+#pickSw { width: 22px; height: 22px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3); }
+#pickSV { width: 100%; height: 150px; border-radius: 10px; cursor: crosshair; display: block; touch-action: none; }
+#pickH { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; margin: 0; background: transparent; cursor: pointer; }
+#pickH::-webkit-slider-runnable-track { height: 10px; border-radius: 99px;
+  background: linear-gradient(90deg, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00); }
+#pickH::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; margin-top: -5px; border-radius: 50%;
+  background: transparent; border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, .6); }
+.pk-row { display: flex; gap: 8px; align-items: center; }
+.pk-hex { flex: 1; display: flex; align-items: center; gap: 8px; background: rgba(0, 0, 0, .35); border-radius: 10px; padding: 0 0 0 12px; }
+.pk-hex span { font: 800 11px var(--f-ui); letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
+#pickHex { flex: 1; min-width: 0; background: none; border: 0; color: var(--ink); padding: 9px 10px 9px 0;
+  font: 700 16px Consolas, "Courier New", monospace; letter-spacing: 1px; user-select: text; text-transform: uppercase; }
+#pickHex:focus { outline: none; }
+.pk-hex:focus-within { box-shadow: inset 0 0 0 1px var(--c6); }
+#pickDrop { width: 40px; height: 38px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .08); color: var(--ink); cursor: pointer;
+  display: grid; place-items: center; }
+#pickDrop:hover { background: rgba(255, 255, 255, .16); }
+#pickDrop[hidden] { display: none; }
+
+/* ---------- web : dés, musique, intro, petits écrans ---------- */
+.group h2 { display: flex; align-items: center; justify-content: space-between; }
+.dice { background: none; border: 0; padding: 2px; cursor: pointer; width: 30px; height: 30px; border-radius: 8px; }
+.dice:hover { background: rgba(0, 0, 0, .25); }
+.dice svg { width: 22px; height: 22px; display: block; }
+.dice.rolled svg { animation: roll .45s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes roll { from { transform: rotate(-200deg) scale(.6); } to { transform: none; } }
+.mini .die { position: absolute; right: -6px; top: -6px; width: 24px; height: 24px; }
+.mini.poly img { filter: saturate(1.4); }
+.mini.poly::after { content: ""; position: absolute; inset: 5px; border-radius: 4px; pointer-events: none; mix-blend-mode: color-dodge;
+  background: linear-gradient(115deg, #f0f6 0%, #0ff6 30%, #ff06 55%, #f0f6 80%); background-size: 250% 100%; animation: holo 3s linear infinite; }
+@keyframes holo { to { background-position: -250% 0; } }
+.music { padding: 6px 20px 2px; display: grid; gap: 6px; }
+.music-row { display: flex; gap: 8px; }
+.music-row button, .btns button { flex: 1; padding: 9px 8px; border-radius: 999px; cursor: pointer; font: 800 13px var(--f-ui); border: 0;
+  color: var(--ink); background: rgba(0, 0, 0, .28); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .3); }
+.music-row button:hover, .btns button:hover { background: rgba(255, 255, 255, .08); }
+.music-row button[aria-pressed="true"] { color: #140b12; background: linear-gradient(90deg, var(--c4), var(--c6)); box-shadow: none; }
+#musicState { margin: 0; min-height: 17px; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meter { display: grid; gap: 3px; }
+.meter i { display: block; height: 4px; border-radius: 4px; width: 0; background: var(--c4); transition: width .05s; }
+.meter i + i { background: var(--c6); }
+.btns { display: flex; gap: 8px; }
+#saveBtn { color: #140b12; background: linear-gradient(90deg, var(--c4), var(--c6)); box-shadow: none; }
+.link { all: unset; cursor: pointer; font: 600 12.5px var(--f-ui); color: var(--muted); text-decoration: underline; text-underline-offset: 3px; justify-self: start; }
+.link:hover { color: var(--ink); }
+#intro { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: 16px;
+  background: rgba(0, 0, 0, .55); backdrop-filter: blur(8px); overflow-y: auto; }
+.intro-box { width: min(760px, 100%); background: var(--panel-bg); border-radius: 22px; padding: 26px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c6) 30%, transparent), 0 22px 50px rgba(0, 0, 0, .5); display: grid; gap: 16px; }
+.intro-box h2 { margin: 0; font: 800 30px/1 var(--f-flow); }
+.intro-box h2 span { color: var(--c6); }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.steps li { background: rgba(0, 0, 0, .25); border-radius: 14px; padding: 10px; }
+/* schémas de l'intro, repris de la page d'options de Ferrolizer */
+.demo { position: relative; aspect-ratio: 16 / 9; border-radius: 8px; background: #08050b; overflow: hidden; }
+.tv { position: absolute; inset: 14% 10% 14% 30%; border-radius: 5px; background: #1b1424; border: 2px solid #3a2d48; overflow: hidden; }
+.d2 .tv, .d3 .tv { inset: 10% 14% 24%; }
+.tv canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.play { position: absolute; left: 50%; top: 38%; transform: translate(-40%, -50%); border-style: solid;
+  border-color: transparent transparent transparent #ff7a59; border-width: 13px 0 13px 22px; }
+.eq { position: absolute; left: 0; right: 0; bottom: 8%; height: 26%; display: flex; gap: 4%; justify-content: center; align-items: flex-end; }
+.eq i { width: 6%; height: 100%; border-radius: 2px; background: linear-gradient(#ffb35c, #e8508f); transform-origin: bottom;
+  animation: eq .9s ease-in-out infinite alternate; }
+.eq i:nth-child(2) { animation-delay: -.3s; animation-duration: .7s; } .eq i:nth-child(3) { animation-delay: -.6s; }
+.eq i:nth-child(4) { animation-delay: -.15s; animation-duration: .8s; } .eq i:nth-child(5) { animation-delay: -.45s; animation-duration: .65s; }
+.eq i:nth-child(6) { animation-delay: -.2s; } .eq i:nth-child(7) { animation-delay: -.5s; animation-duration: .75s; }
+@keyframes eq { from { transform: scaleY(.15); } to { transform: scaleY(1); } }
+.d3 .eq { bottom: 5%; height: 14%; }
+.eq.beat i { animation: kick .345s cubic-bezier(.1, .9, .3, 1) infinite; }      /* 174 BPM */
+.eq.beat i:nth-child(even) { animation-delay: -.03s; }
+@keyframes kick { from { transform: scaleY(1); } to { transform: scaleY(.2); } }
+/* étape 1 : la carte est lancée sur l'écran, qui devient de l'huile */
+.fly { position: absolute; left: 7%; top: 50%; width: 13%; aspect-ratio: 36 / 50; border-radius: 3px; border: 2px solid var(--card);
+  background: repeating-linear-gradient(45deg, #2a1640 0 4px, #33194d 4px 8px); box-shadow: 0 6px 12px rgba(0, 0, 0, .6);
+  animation: fly 3.6s cubic-bezier(.5, 0, .3, 1) infinite; }
+@keyframes fly { 0%, 12% { transform: translate(0, 0) rotate(-6deg); opacity: 1; }
+  48% { transform: translate(330%, -55%) rotate(8deg) scale(1.15); opacity: 1; }
+  56%, 100% { transform: translate(330%, -55%) rotate(8deg) scale(.6); opacity: 0; } }
+#demo1 { animation: oilin 3.6s ease infinite; }
+@keyframes oilin { 0%, 50% { opacity: 0; } 58%, 92% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .eq i, .fly, #demo1 { animation: none !important; } #demo1 { opacity: 1; } .fly { display: none; } }
+.steps p { margin: 10px 2px 2px; font: 700 15px var(--f-ui); display: flex; gap: 8px; align-items: baseline; }
+.steps p b { color: var(--c6); font: 800 13px var(--f-flow); }
+.specials { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+#introGo { justify-self: end; padding: 11px 26px; border: 0; border-radius: 999px; cursor: pointer; font: 800 14px var(--f-ui);
+  color: #140b12; background: linear-gradient(90deg, var(--c4), var(--c6)); }
+#openPanel, #closePanel { display: none; }
+button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (max-width: 760px) {
+  :root { --panel-w: 0px; --hand-h: 140px; }
+  #panel { left: 8px; right: 8px; width: auto; top: auto; max-height: 72vh; bottom: 8px; z-index: 50; }
+  #panel:not(.open) { display: none; }
+  #closePanel { display: inline-block; }
+  #openPanel { display: block; position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); z-index: 40;
+    padding: 8px 16px; border: 0; border-radius: 999px; font: 800 13px var(--f-ui); color: #140b12; background: linear-gradient(90deg, var(--c4), var(--c6)); }
+  #hand { padding: 0 max(16px, env(safe-area-inset-left, 0px)); }
+  #hint { display: none; }
+  .steps { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .mini.poly::after, .dice.rolled svg { animation: none; } }
+</style>
+<canvas id="bg"></canvas>
+
+<div id="stage">
+  <div id="card">
+    <div class="face front">
+      <canvas id="face" width="48" height="68"></canvas>
+      <div class="corner tl"><b id="rank">OIL</b><i></i></div>
+      <div class="corner br"><b id="rank2">OIL</b><i></i></div>
+      <div class="shine"></div>
+    </div>
+    <div class="face back">
+      <div class="back-title" id="backName">Glistening Oil</div>
+      <dl id="stats"></dl>
+    </div>
+  </div>
+  <p id="live" aria-live="polite"><span data-i18n="liveTip"></span> <b id="liveName"></b> <output id="liveVal"></output></p>
+  <p id="hint" data-i18n="hint"></p>
+</div>
+
+<div id="hand">
+  <button class="mini deck" id="deck" type="button"><span data-i18n="draw"></span></button>
+  <div id="cards"></div>
+</div>
+
+<aside id="panel">
+  <header>
+    <h1>OIL<span>DECK</span></h1>
+    <div class="toggles">
+      <button id="help" type="button" aria-label="Help">?</button>
+      <button id="lang" type="button">FR</button>
+      <button id="closePanel" type="button" aria-label="Close">✕</button>
+    </div>
+  </header>
+  <p class="sub" id="pname"></p>
+  <section class="music">
+    <div class="music-row">
+      <button id="demoBtn" type="button" data-i18n="demo"></button>
+      <button id="songBtn" type="button" data-i18n="song"></button>
+      <input type="file" id="songFile" accept="audio/*" hidden>
+    </div>
+    <p id="musicState"></p>
+    <div class="meter" aria-hidden="true"><i id="bassBar"></i><i id="trebBar"></i></div>
+  </section>
+  <div id="controls"></div>
+  <section class="export">
+    <input id="name" maxlength="40" autocomplete="off" spellcheck="false">
+    <div class="btns">
+      <button id="resetBtn" type="button" data-i18n="reset"></button>
+      <button id="saveBtn" type="button" data-i18n="save"></button>
+    </div>
+    <button id="importBtn" type="button" class="link" data-i18n="importBtn"></button>
+    <input type="file" id="importFile" accept=".json,application/json" multiple hidden>
+    <p id="status" role="status"></p>
+  </section>
+</aside>
+<button id="openPanel" type="button" data-i18n="tune"></button>
+
+<div id="intro" hidden>
+  <div class="intro-box">
+    <h2>OIL<span>DECK</span></h2>
+    <ol class="steps">
+      <li><div class="demo d1" aria-hidden="true">
+          <div class="tv"><canvas id="demo1"></canvas></div><div class="fly"></div>
+        </div><p><b>1</b><span data-i18n="step1"></span></p></li>
+      <li><div class="demo d2" aria-hidden="true">
+          <div class="tv"><i class="play"></i><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div><p><b>2</b><span data-i18n="step2"></span></p></li>
+      <li><div class="demo d3" aria-hidden="true">
+          <div class="tv"><canvas id="demo3"></canvas></div><div class="eq beat"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div><p><b>3</b><span data-i18n="step3"></span></p></li>
+    </ol>
+    <p class="specials" data-i18n="specials"></p>
+    <button id="introGo" type="button" data-i18n="go"></button>
+  </div>
+</div>
+
+<div id="ctx" role="menu" hidden></div>
+
+<div id="picker" role="dialog" aria-label="Color" hidden>
+  <p class="pk-head"><i id="pickSw"></i><b id="pickRole"></b></p>
+  <canvas id="pickSV" width="232" height="150"></canvas>
+  <input type="range" id="pickH" min="0" max="360" step="1" aria-label="Hue">
+  <div class="pk-row">
+    <label class="pk-hex"><span id="pickHexLbl">Hex</span><input id="pickHex" maxlength="7" autocomplete="off" spellcheck="false"></label>
+    <button id="pickDrop" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20.7 5.6 18.4 3.3a1 1 0 0 0-1.4 0l-3.1 3.1-1.4-1.4-1.4 1.4 1.4 1.4-8.1 8.1a2 2 0 0 0-.6 1.4V20h2.7a2 2 0 0 0 1.4-.6l8.1-8.1 1.4 1.4 1.4-1.4-1.4-1.4 3.1-3.1a1 1 0 0 0 0-1.4ZM7.1 18H6v-1.1l8-8 1.1 1.1-8 8Z"/></svg></button>
+  </div>
+</div>
+<svg width="0" height="0" style="position:absolute"><symbol id="die" viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="4" fill="#f6f0e6" stroke="#1b0c22" stroke-width="1.5"/><g fill="#1b0c22"><circle cx="8" cy="8" r="1.8"/><circle cx="16" cy="8" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="8" cy="16" r="1.8"/><circle cx="16" cy="16" r="1.8"/></g></symbol></svg>
+
+<script>// Fluide en domain warping. Tous les réglages arrivent en uniformes : l'appli les change en direct,
+// le fond exporté les fige. uQuant > 0 = réduction "8 bits" (réservée à la carte).
+const OIL_FRAG = `
+precision highp float;
+uniform vec2 resolution; uniform float time;
+uniform vec3 uPal[7];                 // ombre, milieu, froid, froid 2, chaud, mi-lueur, coeur
+uniform vec2 uGC, uWD; uniform float uGR;
+uniform float uHue, uSat, uLight, uVisc, uWarp, uScale, uStretch, uAngle, uTerr, uSteps, uGrain, uAgit, uQuant;
+float h(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+1.),f.x),f.y);}
+float fbm(vec2 p){
+  float v=0.,a=.5,s=0.,g=mix(.6,.4,uVisc);          // visqueux = moins de petits remous
+  mat2 m=mat2(1.6,1.2,-1.2,1.6);
+  for(int i=0;i<6;i++){v+=a*n(p);s+=a;p=m*p;a*=g;}
+  return v/s*.984;
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/resolution;
+  vec2 p=(gl_FragCoord.xy-.5*resolution)/min(resolution.x,resolution.y)*uScale;
+  float ca=cos(uAngle),sa=sin(uAngle); p=mat2(ca,sa,-sa,ca)*p; p.y*=uStretch;
+  float t=time*.035, iw=mix(1.4,.6,uVisc), W=uWarp+uAgit*2.;
+  vec2 q=vec2(fbm(p+vec2(0,t)),fbm(p+vec2(5.2,1.3)-t));
+  vec2 r=vec2(fbm(p+W*q+vec2(1.7,9.2)+t*1.3*iw),fbm(p+W*q+vec2(8.3,2.8)-t*1.1*iw));
+  float f=fbm(p+W*1.085*r);
+  f=mix(f,floor(f*uSteps)/uSteps,uTerr);
+  float fib=n(gl_FragCoord.xy*.9)*uGrain;
+  float glow=1.-smoothstep(0.,uGR,length((uv-uGC)*vec2(1.,1.4))+.15*(q.y-.5));
+  float wside=smoothstep(.15,.85,dot(uv-.5,uWD)+.5+.15*(q.x-.5));
+  float w=max(glow,wside*.8);
+  vec3 cool=mix(uPal[2],uPal[3],smoothstep(.5,.75,r.x));
+  vec3 warm=mix(uPal[4],uPal[6],smoothstep(.42,.72,f)*smoothstep(.1,.6,glow));
+  vec3 hi=mix(cool,warm,smoothstep(.15,.8,w));
+  vec3 c=mix(uPal[0],mix(uPal[1],uPal[5],w*.8),smoothstep(.2,.45,f));
+  c=mix(c,hi,smoothstep(.42,.68,f+.3*r.x-.12));
+  c*=.9+fib*2.-uGrain;
+  float Y=dot(c,vec3(.299,.587,.114)), I=dot(c,vec3(.596,-.274,-.322)), Q=dot(c,vec3(.211,-.523,.312));
+  float hc=cos(uHue),hs=sin(uHue); vec2 iq=vec2(I*hc-Q*hs,I*hs+Q*hc)*uSat;   // rotation de teinte en YIQ
+  c=vec3(Y+.956*iq.x+.621*iq.y, Y-.272*iq.x-.647*iq.y, Y-1.106*iq.x+1.703*iq.y)*uLight;
+  if(uQuant>0.){float d=h(floor(gl_FragCoord.xy))-.5; c=floor(c*uQuant+.5+d*.45)/uQuant;}
+  gl_FragColor=vec4(clamp(c,0.,1.),1);
+}`;
+
+;
+// Partagé : l'appli et chaque fond exporté dessinent avec ce même code.
+function hexRgb(h) { return [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255); }
+
+function createOil(canvas, frag, opt = {}) {
+  const gl = canvas.getContext('webgl', { preserveDrawingBuffer: !!opt.keep, antialias: false });
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o);
+    if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, 'attribute vec2 a;void main(){gl_Position=vec4(a,0,1);}'));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, frag)); gl.linkProgram(pr); gl.useProgram(pr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  for (const k of ['resolution', 'time', 'uPal', 'uGC', 'uGR', 'uWD', 'uHue', 'uSat', 'uLight', 'uVisc', 'uWarp',
+    'uScale', 'uStretch', 'uAngle', 'uTerr', 'uSteps', 'uGrain', 'uAgit', 'uQuant']) U[k] = gl.getUniformLocation(pr, k);
+  const rad = d => d * Math.PI / 180;
+  return {
+    canvas,
+    draw(P, t, agit, quant, w, h) {
+      w = Math.max(1, w | 0); h = Math.max(1, h | 0);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      gl.viewport(0, 0, w, h);
+      gl.uniform2f(U.resolution, w, h); gl.uniform1f(U.time, t);
+      gl.uniform3fv(U.uPal, new Float32Array(P.pal.flatMap(hexRgb)));
+      gl.uniform2f(U.uGC, P.gc[0], P.gc[1]); gl.uniform1f(U.uGR, P.gr);
+      gl.uniform2f(U.uWD, Math.cos(rad(P.warm)), Math.sin(rad(P.warm)));
+      gl.uniform1f(U.uHue, rad(P.hue)); gl.uniform1f(U.uSat, P.sat); gl.uniform1f(U.uLight, P.light);
+      gl.uniform1f(U.uVisc, P.visc); gl.uniform1f(U.uWarp, P.warp); gl.uniform1f(U.uScale, P.scale);
+      gl.uniform1f(U.uStretch, P.stretch); gl.uniform1f(U.uAngle, rad(P.angle)); gl.uniform1f(U.uTerr, P.terr);
+      gl.uniform1f(U.uSteps, P.steps); gl.uniform1f(U.uGrain, P.grain);
+      gl.uniform1f(U.uAgit, agit); gl.uniform1f(U.uQuant, quant);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    },
+  };
+}
+
+;
+// Les 6 fonds de départ. pal = ombre, milieu, froid, froid 2, chaud, mi-lueur, coeur.
+// gc = point lumineux (0..1, origine en bas à gauche), warm = direction du côté chaud en degrés.
+const BASE = { hue: 0, sat: 1, light: 1, visc: .5, speed: 1, warp: 3.5, scale: 2.2, stretch: 1.6, angle: -36.87,
+  terr: .35, steps: 14, grain: .06 };
+const PRESETS = [
+  { name: 'Glistening Oil',    pal: ['#170530', '#3d0d61', '#7a29ad', '#cc217a', '#ff5c4d', '#701240', '#ff9a6a'], gc: [.1, .75], gr: .8, warm: 161 },
+  { name: 'Glistening Dusk',   pal: ['#614785', '#755cad', '#9480c7', '#a8e0d1', '#f79447', '#e678b0', '#f5e8a8'], gc: [.18, .12], gr: .75, warm: -127 },
+  { name: 'Glistening Shard',  pal: ['#24102c', '#55246e', '#ff4f8f', '#6c58d8', '#ff6a32', '#b8324a', '#ffc04a'], gc: [.2, .85], gr: .8, warm: 135 },
+  { name: 'Glistening Amber',  pal: ['#231d20', '#45343a', '#b08a8e', '#e2c6c8', '#ec8a4a', '#9a5034', '#ffd77a'], gc: [.5, .3], gr: .95, warm: -90 },
+  { name: 'Glistening Shrine', pal: ['#211a2e', '#553a66', '#8576d8', '#cf8ad8', '#ec8a5a', '#d0a24e', '#f8ec96'], gc: [.5, .35], gr: .8, warm: -90 },
+  { name: 'Glistening Moss',   pal: ['#12170e', '#26341f', '#5a8cc4', '#78e46a', '#c9b02e', '#5e6e1c', '#eee27a'], gc: [.25, .15], gr: .75, warm: -135 },
+].map(p => ({ ...BASE, ...p }));
+
+;
+// Partagé par la page YouTube et l'atelier : tirage de palette (même harmonie que la pioche de l'appli),
+// nettoyage d'une carte, et la dérive Polychrome.
+const WORDS = ['Delve', 'Surveil', 'Madness', 'Unearth', 'Cascade', 'Ichor', 'Brine', 'Ember', 'Drop', 'Break',
+  'Parry', 'Iframe', 'Heist', 'Relic', 'Entropie', 'Alambic'];
+const modDeg = a => ((a % 360) + 360) % 360;
+function hsl(h, s, l) {
+  h = modDeg(h) / 360; const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l);
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); };
+  return '#' + f(0) + f(8) + f(4);
+}
+function toHsl(hex) {
+  const [r, g, b] = hexRgb(hex), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  return [(mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60, s, l];
+}
+const cardName = () => `${WORDS[Math.floor(Math.random() * WORDS.length)]} ${Math.floor(100 + Math.random() * 900)}`;
+function randomPalette() {
+  const r = (a, b) => a + Math.random() * (b - a);
+  const h0 = Math.random() * 360, hm = [30, 150, 180, -60, 90, -120][Math.floor(Math.random() * 6)];
+  return [hsl(h0 + hm * .2, r(.3, .6), r(.06, .13)), hsl(h0, r(.3, .6), r(.17, .28)), hsl(h0, r(.5, .85), r(.45, .62)),
+    hsl(h0 + hm, r(.5, .85), r(.5, .7)), hsl(h0 + hm * .5, r(.7, .95), r(.55, .65)), hsl(h0 + hm * .4, r(.4, .7), r(.3, .45)),
+    hsl(h0 + hm * .5 + 15, r(.7, 1), r(.72, .85))];
+}
+function randomPreset() {
+  const r = (a, b) => a + Math.random() * (b - a);
+  return {
+    name: cardName(), pal: randomPalette(),
+    gc: [r(.1, .9), r(.1, .9)], gr: r(.55, 1.1), warm: r(-180, 180),
+    hue: 0, sat: r(.85, 1.2), light: r(.9, 1.1), visc: r(.2, .8), speed: r(.6, 1.6), warp: r(2.5, 4.8),
+    scale: r(1.6, 3.2), stretch: r(1, 2.2), angle: r(-90, 90), terr: r(.1, .6), steps: Math.round(r(8, 20)), grain: r(.02, .09),
+  };
+}
+
+// Une carte OILMAKER valide, ramenée aux seuls champs connus (le reste est ignoré).
+const HEX = /^#[0-9a-f]{6}$/i;
+function cleanCard(o, fallback) {
+  if (!o || !Array.isArray(o.pal) || o.pal.length !== 7 || !o.pal.every(c => typeof c === 'string' && HEX.test(c))) return null;
+  const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const c = {};
+  for (const k of Object.keys(BASE)) c[k] = num(o[k], BASE[k]);
+  c.gr = num(o.gr, .8); c.warm = num(o.warm, 135);
+  c.gc = Array.isArray(o.gc) && o.gc.length === 2 ? [num(o.gc[0], .5), num(o.gc[1], .5)] : [.5, .5];
+  c.pal = o.pal.map(s => s.toLowerCase());
+  c.name = String(o.name || fallback).slice(0, 60);
+  return c;
+}
+
+// Polychrome : la palette glisse en continu vers une nouvelle harmonie tirée au hasard, et chaque couleur
+// ondule un peu de son côté (sommes de sinus à périodes premières entre elles : pas de motif qui se répète).
+function createDrift(startPal) {
+  let cur = startPal.map(toHsl), target = randomPalette().map(toHsl), left = 18, t = Math.random() * 100;
+  return {
+    step(dt, push = 0) {                  // push (0..1, les basses) accélère la dérive
+      const k = dt * (1 + push * 1.5);
+      t += k; left -= k;
+      if (left <= 0) { target = randomPalette().map(toHsl); left = 14 + Math.random() * 12; }
+      const a = Math.min(1, k * .12);
+      cur = cur.map(([h, s, l], i) => {
+        const [th, ts, tl] = target[i], dh = ((th - h + 540) % 360) - 180;   // par le plus court chemin
+        return [h + dh * a, s + (ts - s) * a, l + (tl - l) * a];
+      });
+      return cur.map(([h, s, l], i) => hsl(h + 9 * Math.sin(t * .23 + i * 1.7) + 5 * Math.sin(t * .071 + i * 2.3),
+        Math.min(1, Math.max(0, s + .05 * Math.sin(t * .13 + i))), Math.min(.95, Math.max(.02, l * (1 + .06 * Math.sin(t * .17 + i * .9))))));
+    },
+  };
+}
+
+// Les réglages de l'appli, par groupe : [clé, min, max, pas, unité]. Plages identiques au panneau d'OILMAKER.
+const GROUPS = [
+  ['color', [['hue', 0, 360, 1, '°'], ['sat', 0, 2, .01], ['light', .4, 1.6, .01]]],
+  ['fluid', [['visc', 0, 1, .01], ['speed', 0, 4, .01], ['warp', .5, 7, .01]]],
+  ['texture', [['scale', .8, 5, .01], ['stretch', .5, 3, .01], ['angle', -180, 180, 1, '°'], ['terr', 0, 1, .01],
+    ['steps', 3, 30, 1], ['grain', 0, .2, .005]]],
+  ['glowS', [['gr', .2, 1.6, .01], ['warm', -180, 180, 1, '°']]],
+];
+// Tirage "joli" : les plages de la pioche de l'appli. Tirage "sauvage" (carte Random) : toute la plage du curseur,
+// sauf saturation et luminosité un peu bridées pour ne jamais tomber sur un écran gris ou noir.
+const NICE = { hue: [0, 360], sat: [.85, 1.2], light: [.9, 1.1], visc: [.2, .8], speed: [.6, 1.6], warp: [2.5, 4.8],
+  scale: [1.6, 3.2], stretch: [1, 2.2], angle: [-90, 90], terr: [.1, .6], steps: [8, 20], grain: [.02, .09], gr: [.55, 1.1], warm: [-180, 180] };
+const WILD_CLAMP = { sat: [.5, 1.9], light: [.75, 1.4], speed: [.2, 3.2], grain: [0, .14], gr: [.35, 1.6] };
+function rollGroup(P, g, wild = false) {
+  const r = (a, b) => a + Math.random() * (b - a);
+  if (g === 'palette') { P.pal = randomPalette(); return P; }
+  for (const [k, min, max, step] of GROUPS.find(x => x[0] === g)[1]) {
+    const [a, b] = wild ? (WILD_CLAMP[k] || [min, max]) : NICE[k];
+    P[k] = step >= 1 ? Math.round(r(a, b)) : r(a, b);
+  }
+  if (g === 'glowS') P.gc = [r(.1, .9), r(.1, .9)];
+  return P;
+}
+// Pilote automatique de la forme : angle, échelle, relief, déformation, teinte et point lumineux glissent autour
+// des valeurs de la carte vers une cible tirée au hasard (15 à 40 s), avec de petites ondulations par-dessus.
+// jump() change de cible tout de suite et y va vite : un changement de phrase, un drop.
+const MORPH = { angle: [-60, 60], scale: [-.7, .9], stretch: [-.5, .6], terr: [-.25, .3], warp: [-1.2, 1.4],
+  hue: [-35, 35], gx: [-.22, .22], gy: [-.2, .2] };
+const MRANGE = Object.fromEntries(GROUPS.flatMap(g => g[1]).map(([k, a, b]) => [k, [a, b]]));
+function createMorph() {
+  const pick = () => Object.fromEntries(Object.entries(MORPH).map(([k, [a, b]]) => [k, a + Math.random() * (b - a)]));
+  const lim = (k, v) => Math.min(MRANGE[k][1], Math.max(MRANGE[k][0], v));
+  let cur = pick(), target = pick(), left = 15 + Math.random() * 25, fast = 0, t = Math.random() * 100;
+  return {
+    jump() { target = pick(); left = 15 + Math.random() * 25; fast = 1; },
+    step(dt, P) {
+      t += dt; left -= dt; fast *= Math.exp(-dt * 1.5);
+      if (left <= 0) { target = pick(); left = 15 + Math.random() * 25; }
+      const a = Math.min(1, dt * (.06 + fast * 1.6));
+      for (const k in cur) cur[k] += (target[k] - cur[k]) * a;
+      const w = (f, p) => Math.sin(t * f + p);
+      return { ...P,
+        angle: P.angle + cur.angle + 10 * w(.11, 0), hue: P.hue + cur.hue + 6 * w(.05, 2),
+        scale: lim('scale', P.scale + cur.scale + .15 * w(.083, 1)), stretch: lim('stretch', P.stretch + cur.stretch + .1 * w(.067, 3)),
+        terr: lim('terr', P.terr + cur.terr), warp: lim('warp', P.warp + cur.warp + .3 * w(.13, 4)),
+        gc: [Math.min(.95, Math.max(.05, P.gc[0] + cur.gx + .06 * w(.07, 5))), Math.min(.95, Math.max(.05, P.gc[1] + cur.gy + .05 * w(.053, 6)))] };
+    },
+  };
+}
+function wildPreset() {
+  const P = { ...BASE, name: cardName(), pal: randomPalette(), gc: [.5, .5], gr: .8, warm: 0 };
+  for (const [g] of GROUPS) rollGroup(P, g, true);
+  return P;
+}
+
+;
+const STARTERS = [{"hue":0,"sat":1.2,"light":1.03,"visc":0.66,"speed":2.94,"warp":3.5,"scale":5,"stretch":2.19,"angle":-78,"terr":0.4166233516187554,"steps":19,"grain":0,"name":"BLUEEEEEEEEE AND PURPULEEEEEEEEE","pal":["#30153c","#521d6a","#b552e1","#50d3aa","#58a770","#1c2991","#858cf7"],"gc":[0.5546014412931578,0.16068445177040147],"gr":0.71,"warm":7},{"hue":0,"sat":1,"light":1,"visc":0.5,"speed":1,"warp":3.5,"scale":4.23,"stretch":2.74,"angle":-36.87,"terr":0.35,"steps":14,"grain":0.06,"name":"Glistening Oil","pal":["#170530","#3d0d61","#7a29ad","#93255e","#ff5c4d","#701240","#ff9a6a"],"gc":[0.1,0.75],"gr":1.08,"warm":161},{"hue":360,"sat":1.42,"light":1.05,"visc":0.2,"speed":3.26,"warp":3.5,"scale":4.32,"stretch":3,"angle":119,"terr":0.82,"steps":25,"grain":0.06,"name":"heeeel yeaaaaaaahfdsqiodhqsodhoqshdsoq","pal":["#614785","#755cad","#9480c7","#a8e0d1","#f79447","#d0498f","#fbe474"],"gc":[0.7230856875155834,0.09717739329618569],"gr":1.42,"warm":-62},{"hue":267,"sat":1.29,"light":1.12,"visc":0.78,"speed":2.05,"warp":4.84,"scale":4.6,"stretch":2.98,"angle":-78.22235891414734,"terr":0.11,"steps":14,"grain":0.065,"name":"Heist 545","pal":["#0c1517","#160b51","#15de90","#da3b79","#784dac","#152341","#bb96fe"],"gc":[0.20760363812655955,0.39379927972939066],"gr":0.2,"warm":-88},{"hue":99.23309641796641,"sat":0.9490249251046905,"light":1.035629424481459,"visc":0.19333333333333333,"speed":0.94,"warp":3.61,"scale":4.872481395278536,"stretch":1.4515328720715603,"angle":3.6196822214615167,"terr":0.3975855247049215,"steps":14,"grain":0.0667617253454469,"name":"Parry 654","pal":["#1c0e13","#551d52","#bd2db3","#56ed60","#e3a85b","#bd4d25","#faebaa"],"gc":[0.6973359128262134,0.8084474872140324],"gr":0.5826759978950561,"warm":-10.672982100623017},{"hue":0,"sat":1,"light":1,"visc":0.2,"speed":1,"warp":3.5,"scale":4.928884551373327,"stretch":1.7410028735042402,"angle":-49.63671713833003,"terr":0.35,"steps":12,"grain":0.06,"name":"Space airbrush","pal":["#0e1521","#382938","#77465b","#787689","#3d5881","#283a56","#a96765"],"gc":[0.1,0.75],"gr":1.6,"warm":161},{"hue":33,"sat":0.9021083262242757,"light":0.9261414696017257,"visc":0.3176909487753886,"speed":1.4956221554853626,"warp":4.62295899449135,"scale":2.70520131243871,"stretch":1.0478301561754484,"angle":26.02994272766918,"terr":0.4051727778663662,"steps":17,"grain":0.08600771741824545,"name":"Sunset","pal":["#21120a","#521821","#e82844","#7bde9e","#ddf229","#aa9727","#cef38a"],"gc":[0.19814464414804478,0.262972922007964],"gr":0.8371989930946665,"warm":-40.25090799444024},{"hue":0,"sat":1,"light":1,"visc":0.5,"speed":1,"warp":3.5,"scale":4.23,"stretch":2.74,"angle":-36.87,"terr":0.35,"steps":14,"grain":0.06,"name":"Super glistering oil waaaa","pal":["#170530","#3d0d61","#7a29ad","#93255e","#ff5c4d","#701240","#ff9a6a"],"gc":[0.1,0.75],"gr":1.08,"warm":161},{"hue":0,"sat":1.29,"light":1.12,"visc":0.56,"speed":1.28,"warp":2.06,"scale":5,"stretch":3,"angle":50,"terr":0.11,"steps":14,"grain":0.065,"name":"Vaporoil","pal":["#0c1517","#160b51","#15de90","#da3b79","#784dac","#152341","#bb96fe"],"gc":[0.20760363812655955,0.39379927972939066],"gr":0.39,"warm":-48}].map(c => cleanCard(c, 'Oil')).filter(Boolean);
+;
+// Oildeck web : l'huile qui écoute (repris de Ferrolizer), la démo 174 synthétisée, l'intro en 3 étapes.
+// Chargé avant app.js dans le même <script> : seules les déclarations tournent ici au chargement.
+const el = id => document.getElementById(id);
+let ac = null, an = null, bins = null, out = null, music = null, songEl = null, songName = '', demoTimer = 0, morph = null;
+
+function audio() {
+  if (!ac) {
+    ac = new AudioContext(); an = ac.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = .4;
+    bins = new Uint8Array(an.frequencyBinCount);
+    out = ac.createGain(); out.connect(an); out.connect(ac.destination);
+  }
+  if (ac.state === 'suspended') ac.resume();
+}
+function startMusic(kind) {
+  stopMusic(); audio(); music = kind; morph = createMorph(); beatN = 0; lastBeat = -1e9; calm = 1; agit += .6;
+  showMusic();
+}
+function stopMusic() {
+  music = null; clearInterval(demoTimer); demoTimer = 0;
+  if (songEl) { songEl.pause(); URL.revokeObjectURL(songEl.src); songEl = null; }
+  showMusic();
+}
+function playSong(file) {
+  if (!file || !/^audio\//.test(file.type)) return;
+  startMusic('song');
+  songEl = new Audio(URL.createObjectURL(file)); songEl.loop = true; songName = file.name.replace(/\.[^.]+$/, '');
+  ac.createMediaElementSource(songEl).connect(out);
+  songEl.play().catch(() => { stopMusic(); el('musicState').textContent = t('songErr'); });
+  songEl.onerror = () => { stopMusic(); el('musicState').textContent = t('songErr'); };
+  showMusic();
+}
+
+// ---------- démo : kick, caisse claire, charley à 174 BPM ; 32 temps, puis 8 temps de break, puis le drop ----------
+let noiseBuf = null;
+function hit(type, at) {
+  if (type === 'kick') {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(160, at); o.frequency.exponentialRampToValueAtTime(42, at + .12);
+    g.gain.setValueAtTime(1, at); g.gain.exponentialRampToValueAtTime(.001, at + .35);
+    o.connect(g).connect(out); o.start(at); o.stop(at + .4); return;
+  }
+  if (!noiseBuf) {
+    noiseBuf = ac.createBuffer(1, ac.sampleRate * .3, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const n = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), snare = type === 'snare';
+  n.buffer = noiseBuf; f.type = snare ? 'bandpass' : 'highpass'; f.frequency.value = snare ? 1800 : 7500;
+  const len = snare ? .18 : .04, vol = snare ? .55 : .18;
+  g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(.001, at + len);
+  n.connect(f).connect(g).connect(out); n.start(at); n.stop(at + len + .02);
+}
+function playDemo() {
+  startMusic('demo');
+  const beat = 60 / 174, half = beat / 2;
+  let step = 0, next = ac.currentTime + .1;       // un pas = une croche
+  demoTimer = setInterval(() => {
+    while (next < ac.currentTime + .15) {
+      const b = Math.floor(step / 2) % 40, on = step % 2 === 0, brk = b >= 32;
+      // ponytail: motif DnB minimal (kick 1 et 2.5+, snare 2 et 4), à remplacer par une vraie boucle si besoin
+      const bar = step % 8;
+      if (!brk && (bar === 0 || bar === 5)) hit('kick', next);
+      if (!brk && (bar === 2 || bar === 6)) hit('snare', next);
+      if (!on || brk) hit('hat', next);
+      next += half; step++;
+    }
+  }, 25);
+}
+
+// ---------- écoute : basses -> poussée, aigus -> lueur (mêmes réglages que Ferrolizer) ----------
+const band = { b: { pk: .05, m: 0, env: 0, hit: 0 }, t: { pk: .05, m: 0, env: 0, hit: 0 } };
+function follow(o, raw, dt) {
+  o.pk = Math.max(raw, o.pk * Math.exp(-dt / 4), .04);
+  o.m += (raw - o.m) * Math.min(1, dt * 2.5);
+  const hit = o.hit = clamp((raw - o.m) / (o.m * .15 + .01), 0, 1);
+  const x = .25 * raw / o.pk + .75 * hit;
+  o.env += (x - o.env) * Math.min(1, dt * (x > o.env ? 30 : 4));
+  return o.env;
+}
+function hear(dt) {
+  if (!music || !an || ac.state !== 'running') return [0, 0];
+  an.getByteFrequencyData(bins);
+  const hz = ac.sampleRate / an.fftSize, avg = (a, b) => {
+    let s = 0; const i0 = Math.round(a / hz), i1 = Math.round(b / hz);
+    for (let i = i0; i <= i1; i++) s += bins[i]; return s / (i1 - i0 + 1) / 255;
+  };
+  return [follow(band.b, avg(35, 150), dt), follow(band.t, avg(3000, 11000), dt)];
+}
+// Toutes les 32 frappes, nouvelle forme. Plus de kick pendant 2 s : break, l'huile se calme. Le kick revient : drop.
+let beatN = 0, lastBeat = -1e9, calm = 1, boost = 0, push = 0;
+function beats(now, dt) {
+  if (band.b.hit > .6 && now - lastBeat > 220) {
+    if (beatN > 0 && now - lastBeat > 2000) { morph.jump(); boost = 1; beatN = 1; }
+    else if (++beatN % 32 === 0) morph.jump();
+    lastBeat = now;
+  }
+  calm += ((now - lastBeat > 2000 ? .4 : 1) - calm) * Math.min(1, dt * 1.2);
+  boost *= Math.exp(-dt * 1.2);
+}
+
+function showMusic() {
+  el('demoBtn').textContent = music === 'demo' ? t('stop') : t('demo');
+  el('songBtn').textContent = music === 'song' ? t('stop') : t('song');
+  el('demoBtn').setAttribute('aria-pressed', music === 'demo');
+  el('songBtn').setAttribute('aria-pressed', music === 'song');
+  el('musicState').textContent = music === 'demo' ? t('demoOn') : music === 'song' ? t('songOn')(songName) : t('noMusic');
+  el('songBtn').title = t('dropSong');
+}
+el('demoBtn').addEventListener('click', () => (music === 'demo' ? stopMusic() : playDemo()));
+el('songBtn').addEventListener('click', () => (music === 'song' ? stopMusic() : el('songFile').click()));
+el('songFile').addEventListener('change', e => { playSong(e.target.files[0]); e.target.value = ''; });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => {
+  e.preventDefault();
+  const f = [...e.dataTransfer.files].find(f => /^audio\//.test(f.type));
+  if (f) playSong(f);
+});
+
+// ---------- petits écrans : le panneau s'ouvre par-dessus ----------
+el('openPanel').addEventListener('click', () => el('panel').classList.add('open'));
+el('closePanel').addEventListener('click', () => el('panel').classList.remove('open'));
+
+// ---------- intro en 3 étapes : la même huile en miniature ; l'étape 3 tape à 174 BPM ----------
+const seen = () => { try { return !!localStorage.getItem('oildeck-intro'); } catch { return false; } };
+let demos = null;
+function intro(on) {
+  el('intro').hidden = !on;
+  if (!on) return;
+  demos ||= [1, 3].map(i => createOil(el('demo' + i), OIL_FRAG));
+  let dT = 0;
+  (function loop(now) {
+    if (el('intro').hidden) return;
+    requestAnimationFrame(loop); dT += 1 / 60;
+    const beat = Math.exp(-((now / 1000 * 174 / 60) % 1) * 5);
+    demos[0].draw(PRESETS[0], 12 + dT * .8, .1, 0, 200, 112);
+    demos[1].draw(PRESETS[2], 30 + dT * (1 + beat * 2), beat * .9, 0, 200, 112);
+  })(performance.now());
+}
+el('introGo').addEventListener('click', () => { intro(false); try { localStorage.setItem('oildeck-intro', '1'); } catch {} });
+el('help').addEventListener('click', () => intro(true));
+
+;
+// OILMAKER : la carte est la manette. Glisser/lancer = agiter, molette = le dernier réglage touché,
+// clic sur la face = placer la lueur, clic droit = retourner (réglages au dos).
+const $ = s => document.querySelector(s);
+const clone = o => JSON.parse(JSON.stringify(o));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const mod = (a, n) => ((a % n) + n) % n;
+const DPR = Math.min(devicePixelRatio, 1.5); // ponytail: plafonné pour le GPU, monter si ça tient
+
+// ---------- textes EN / FR ----------
+const T = {
+  en: { hint: 'Drag & throw: stir  ·  Wheel on the card: tune  ·  Click the face: place the light  ·  Right-click: flip',
+    liveTip: 'Wheel on the card', liveTag: 'card', resetTip: 'Double-click: back to the card value', hex: 'Hex', eyedrop: 'Pick a color on screen',
+    save: 'Save to deck', saved: n => `Saved to the deck: ${n}`, reset: 'Back to the card',
+    rename: 'Rename', del: 'Delete', baseCard: 'Starter card', removed: n => `Removed: ${n}`,
+    draw: 'DRAW', namePh: 'Card name', rollTip: g => `Randomize: ${g.toLowerCase()}`,
+    color: 'Color', fluid: 'Fluid', texture: 'Texture', glowS: 'Light', palette: 'Palette',
+    hue: 'Hue', sat: 'Saturation', light: 'Brightness', visc: 'Viscosity', speed: 'Speed', warp: 'Turbulence',
+    scale: 'Density', stretch: 'Stretch', angle: 'Angle', terr: 'Terraces', steps: 'Steps', grain: 'Grain',
+    gr: 'Glow radius', warm: 'Warm side',
+    pal: ['Shadow', 'Mid', 'Cool', 'Cool 2', 'Warm', 'Glow', 'Core'],
+    demo: 'Play the 174 demo', song: 'Play my song', stop: 'Stop',
+    noMusic: 'No music: the oil only moves when you throw the card.', demoOn: '174 BPM demo beat, with a break every 32 beats.',
+    songOn: n => `Playing: ${n}`, songErr: 'This file could not be played. Try an mp3, ogg or wav.', dropSong: 'Drop a song anywhere on the page.',
+    importBtn: 'Import cards (.json)', imported: (n, bad) => `${n} card${n === 1 ? '' : 's'} imported${bad ? `, ${bad} file${bad === 1 ? '' : 's'} skipped` : ''}.`,
+    tune: 'Tune', go: 'Play',
+    step1: 'Grab the card and throw it.', step2: 'Drop a song (or play the demo).', step3: 'Watch the sound.',
+    specials: 'Polychrome: colors that drift on their own. Random: a wild roll every time. Each dice rolls one group. Save to deck keeps what you see, in this browser.' },
+  fr: { hint: 'Glisser et lancer : agiter  ·  Molette sur la carte : régler  ·  Clic sur la face : placer la lueur  ·  Clic droit : retourner',
+    liveTip: 'Molette sur la carte', liveTag: 'carte', resetTip: 'Double-clic : retour à la valeur de la carte', hex: 'Hex', eyedrop: "Prendre une couleur à l'écran",
+    save: 'Garder dans le deck', saved: n => `Gardée dans le deck : ${n}`, reset: 'Revenir à la carte',
+    rename: 'Renommer', del: 'Supprimer', baseCard: 'Carte de départ', removed: n => `Retirée : ${n}`,
+    draw: 'PIOCHER', namePh: 'Nom de la carte', rollTip: g => `Tirer au hasard : ${g.toLowerCase()}`,
+    color: 'Couleur', fluid: 'Fluide', texture: 'Texture', glowS: 'Lumière', palette: 'Palette',
+    hue: 'Teinte', sat: 'Saturation', light: 'Luminosité', visc: 'Viscosité', speed: 'Vitesse', warp: 'Remous',
+    scale: 'Densité', stretch: 'Étirement', angle: 'Angle', terr: 'Gradins', steps: 'Crans', grain: 'Grain',
+    gr: 'Rayon lueur', warm: 'Côté chaud',
+    pal: ['Ombre', 'Milieu', 'Froid', 'Froid 2', 'Chaud', 'Lueur', 'Coeur'],
+    demo: 'Lancer la démo 174', song: 'Lancer ma musique', stop: 'Stop',
+    noMusic: "Pas de musique : l'huile ne bouge que quand tu lances la carte.", demoOn: 'Rythme de démo à 174 BPM, avec un break toutes les 32 frappes.',
+    songOn: n => `En lecture : ${n}`, songErr: 'Ce fichier ne se lit pas. Essaie un mp3, ogg ou wav.', dropSong: "Lâche une musique n'importe où sur la page.",
+    importBtn: 'Importer des cartes (.json)', imported: (n, bad) => `${n} carte${n > 1 ? 's' : ''} importée${n > 1 ? 's' : ''}${bad ? `, ${bad} fichier${bad > 1 ? 's' : ''} ignoré${bad > 1 ? 's' : ''}` : ''}.`,
+    tune: 'Régler', go: 'Jouer',
+    step1: 'Attrape la carte et lance-la.', step2: 'Lâche une musique (ou lance la démo).', step3: 'Regarde le son.',
+    specials: 'Polychrome : des couleurs qui dérivent toutes seules. Random : un tirage sauvage à chaque fois. Chaque dé tire un groupe. Garder dans le deck range ce que tu vois, dans ce navigateur.' },
+};
+let lang = 'en';
+try { lang = localStorage.getItem('lang') || 'en'; } catch {}
+const t = k => T[lang][k];
+
+// ---------- réglages ----------
+let P = clone(PRESETS[0]);
+const inputs = {};
+const RANGE = {};
+for (const [, items] of GROUPS) for (const [k, min, max, step, unit = ''] of items) RANGE[k] = { min, max, step, unit };
+const WRAP = new Set(['hue', 'angle', 'warm']);               // réglages en degrés : ils bouclent au lieu de buter
+let live = 'hue';                       // la molette sur la carte règle le dernier réglage touché (la teinte au départ)
+let ORIG = clone(P);                    // valeurs de la carte chargée, pour le double-clic
+
+// Change un réglage de d (unités du réglage), en bouclant ou en butant selon le cas.
+function nudge(k, d) {
+  const R = RANGE[k];
+  let v = P[k] + d;
+  v = WRAP.has(k) ? mod(v - R.min, R.max - R.min) + R.min : clamp(v, R.min, R.max);
+  if (R.step >= 1 && !WRAP.has(k)) v = Math.round(v);
+  P[k] = v;
+  if (k === 'hue' && live === 'hue') S.spin = nearestTurn(P.hue, S.spin);
+  showValue(k);
+}
+function showValue(k) {
+  const c = inputs[k]; if (!c) return;
+  if (document.activeElement !== c.inp) c.inp.value = P[k];
+  if (document.activeElement !== c.out) c.out.value = fmt(P[k], c.step) + c.unit;
+}
+// Une encoche de molette = 1/120 de la plage (Maj : x5, Alt : /5) ; les réglages entiers avancent d'un cran.
+const notches = e => -Math.sign(e.deltaY) * Math.max(1, Math.round(Math.abs(e.deltaY) / 100));
+const wheelStep = (k, e) => {
+  const R = RANGE[k], base = R.step >= 1 && !WRAP.has(k) ? 1 : (R.max - R.min) / 120;
+  return notches(e) * base * (e.shiftKey ? 5 : e.altKey ? .2 : 1);
+};
+let lastWheelTick = 0;
+function wheelTick() { const n = performance.now(); if (n - lastWheelTick > 60) { lastWheelTick = n; sfx('highlight1', .12, 1.1); } }
+
+function setLive(k) {
+  if (k !== live) {
+    live = k;
+    if (k === 'hue') { S.spin = nearestTurn(P.hue, S.vis); S.spinV = 0; }
+    sfx('button', .2);
+  }
+  document.querySelectorAll('.row').forEach(r => r.classList.toggle('live', r.dataset.k === k));
+  showLive();
+}
+function showLive() { $('#liveName').textContent = t(live); $('#liveVal').textContent = fmt(P[live], RANGE[live].step) + RANGE[live].unit; }
+
+function buildControls() {
+  const box = $('#controls'); box.textContent = '';
+  for (const [g, items] of GROUPS) {
+    const sec = document.createElement('section'); sec.className = 'group'; sec.dataset.g = g;
+    sec.append(groupHead(g));
+    const body = document.createElement('div'); body.className = 'group-body'; sec.append(body);
+    for (const [k, min, max, step, unit = ''] of items) {
+      const row = document.createElement('div'); row.className = 'row'; row.dataset.k = k;
+      row.innerHTML = `<div class="rl"><label for="in-${k}" title="${t('resetTip')}">${t(k)}<span class="livetag" title="${t('liveTip')}">${t('liveTag')}</span></label>` +
+        `<input class="val" id="val-${k}" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="${t(k)}"></div>` +
+        `<input type="range" id="in-${k}" min="${min}" max="${max}" step="${step}">`;
+      const inp = row.querySelector('input[type="range"]'), out = row.querySelector('.val');
+      inp.addEventListener('pointerdown', () => setLive(k));
+      inp.addEventListener('input', () => {
+        setLive(k); P[k] = +inp.value; out.value = fmt(P[k], step) + unit;
+        if (k === 'hue') { S.spin = nearestTurn(P.hue, S.spin); S.spinV = 0; }
+        refreshCardChrome(); paintPanel();
+      });
+      row.addEventListener('wheel', e => { e.preventDefault(); setLive(k); nudge(k, wheelStep(k, e)); refreshCardChrome(); paintPanel(); wheelTick(); }, { passive: false });
+      // le chiffre se tape ; double-clic sur le nom = valeur de la carte chargée
+      out.addEventListener('focus', () => { out.select(); setLive(k); });
+      out.addEventListener('keydown', e => { if (e.key === 'Enter') out.blur(); if (e.key === 'Escape') { out.value = fmt(P[k], step) + unit; out.blur(); } });
+      out.addEventListener('change', () => {
+        const n = parseFloat(out.value.replace(',', '.'));
+        if (isFinite(n)) { nudge(k, n - P[k]); refreshCardChrome(); paintPanel(); }
+        showValue(k);
+      });
+      row.querySelector('label').addEventListener('dblclick', () => { setLive(k); nudge(k, ORIG[k] - P[k]); refreshCardChrome(); paintPanel(); sfx('cancel', .25); });
+      inputs[k] = { inp, out, step, unit };
+      body.append(row);
+    }
+    box.append(sec);
+  }
+  const sec = document.createElement('section'); sec.className = 'group'; sec.dataset.g = 'palette';
+  sec.append(groupHead('palette'));
+  const sw = document.createElement('div'); sw.className = 'swatches group-body';
+  P.pal.forEach((_, i) => {
+    const l = document.createElement('div'); l.className = 'swatch';
+    l.innerHTML = `<button type="button" class="chip" aria-label="${t('pal')[i]}"></button><span>${t('pal')[i]}</span>`;
+    const inp = l.querySelector('.chip');
+    Object.defineProperty(inp, 'value', { set(v) { inp.style.setProperty('--c', v); inp.title = v.toUpperCase(); } });
+    inp.addEventListener('click', () => openPicker(i, inp));
+    // molette sur une pastille : on fait tourner la teinte de cette couleur seule
+    l.addEventListener('wheel', e => {
+      e.preventDefault(); P.pal[i] = shiftHue(P.pal[i], notches(e) * (e.shiftKey ? 20 : 4));
+      inp.value = P.pal[i]; refreshCardChrome(); paintPanel(); wheelTick();
+    }, { passive: false });
+    inputs['pal' + i] = { inp };
+    sw.append(l);
+  });
+  sec.append(sw); box.append(sec);
+  syncControls(); setLive(live);
+}
+// titre de groupe + son dé : tire ce groupe seul au hasard (comme dans l'atelier de Ferrolizer)
+function groupHead(g) {
+  const h = document.createElement('h2'), sp = document.createElement('span'); sp.textContent = t(g);
+  const d = document.createElement('button'); d.type = 'button'; d.className = 'dice';
+  d.title = t('rollTip')(t(g)); d.setAttribute('aria-label', d.title);
+  d.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#die"/></svg>';
+  d.addEventListener('click', () => {
+    rollGroup(P, g); if (g === 'palette') drift = null;
+    if (g === 'color') S.spin = nearestTurn(P.hue, S.vis);
+    agit += .35; syncControls(); refreshCardChrome(); paintPanel();
+    d.classList.remove('rolled'); void d.offsetWidth; d.classList.add('rolled');
+  });
+  h.append(sp, d); return h;
+}
+function shiftHue(hex, deg) {
+  const [r, g, b] = hexRgb(hex), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return hex;
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = (mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+  return hsl(h + deg, s, l);
+}
+const fmt = (v, step) => step >= 1 ? String(Math.round(v)) : v.toFixed(step < .01 ? 3 : 2);
+function syncControls() {
+  for (const [k, c] of Object.entries(inputs)) {
+    if (k.startsWith('pal')) c.inp.value = P.pal[+k.slice(3)];
+    else { c.inp.value = P[k]; c.out.value = fmt(P[k], c.step) + c.unit; }
+  }
+}
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(e => { const v = t(e.dataset.i18n); if (typeof v === 'string') e.textContent = v; });
+  $('#name').placeholder = t('namePh'); showMusic();
+  $('#lang').textContent = lang === 'en' ? 'FR' : 'EN';
+  $('#pickHexLbl').textContent = t('hex'); $('#pickDrop').title = t('eyedrop');
+  buildControls(); paintPanel(); if (lastMsg) $('#status').textContent = lastMsg();
+}
+
+// ---------- sons : ceux de l'appli viennent du Balatro installé, ils ne voyagent pas ----------
+function sfx() {}
+let lastMsg = null;
+const say = f => { lastMsg = f; $('#status').textContent = f(); };
+const jitter = () => .92 + Math.random() * .16;
+
+// ---------- rendu ----------
+const bg = createOil($('#bg'), OIL_FRAG);
+const face = createOil($('#face'), OIL_FRAG);
+const thumbs = createOil(document.createElement('canvas'), OIL_FRAG, { keep: true });
+let simT = 12, agit = 0;
+
+// ---------- physique de la carte ----------
+const card = $('#card'), stage = $('#stage');
+const CW = 210, CH = 294;
+const S = { x: 0, y: 0, vx: 0, vy: 0, spin: P.hue, spinV: 0, vis: P.hue, visV: 0, flip: 0, flipV: 0, flipT: 0,
+  hover: false, hx: 0, hy: 0, drag: null, scale: 1, tick: 0, lastTickAt: 0 };
+const home = () => ({ x: stage.clientWidth / 2, y: stage.clientHeight / 2 - 8 });
+const nearestTurn = (deg, near) => deg + 360 * Math.round((near - deg) / 360);
+Object.assign(S, home());
+
+card.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  card.setPointerCapture(e.pointerId);
+  const r = stage.getBoundingClientRect();
+  const onFace = e.target.id === 'face' && Math.abs(mod(S.flip, 360) - 180) > 90;
+  S.drag = { ox: e.clientX - r.left - S.x, oy: e.clientY - r.top - S.y, tx: S.x, ty: S.y,
+    sx: e.clientX, sy: e.clientY, at: performance.now(), moved: 0,
+    fx: onFace ? e.offsetX / e.target.clientWidth : null, fy: onFace ? 1 - e.offsetY / e.target.clientHeight : null };
+  card.classList.add('dragging');
+  sfx('card1', .4, jitter());
+});
+card.addEventListener('pointermove', e => {
+  const r = stage.getBoundingClientRect();
+  if (S.drag) {
+    S.drag.tx = e.clientX - r.left - S.drag.ox; S.drag.ty = e.clientY - r.top - S.drag.oy;
+    S.drag.moved = Math.max(S.drag.moved, Math.hypot(e.clientX - S.drag.sx, e.clientY - S.drag.sy));
+  }
+  S.hx = clamp((e.clientX - r.left - S.x) / (CW / 2), -1, 1); S.hy = clamp((e.clientY - r.top - S.y) / (CH / 2), -1, 1);
+});
+card.addEventListener('pointerup', () => {
+  const d = S.drag; if (!d) return;
+  S.drag = null; card.classList.remove('dragging');
+  if (d.moved < 6 && performance.now() - d.at < 350) {          // simple clic
+    if (d.fx !== null) { P.gc = [clamp(d.fx, 0, 1), clamp(d.fy, 0, 1)]; agit += .25; sfx('holo1', .35, jitter()); }
+    return;
+  }
+  const speed = Math.hypot(S.vx, S.vy);
+  agit += clamp(speed / 2600, 0, 1);
+  sfx(speed > 1400 ? 'whoosh1' : 'cardSlide1', speed > 1400 ? .35 : .4, jitter());
+});
+card.addEventListener('pointerenter', () => { if (!S.hover) sfx('paper1', .15, jitter()); S.hover = true; });
+card.addEventListener('pointerleave', () => { S.hover = false; });
+card.addEventListener('wheel', e => { e.preventDefault(); S.spinV += -e.deltaY * 1.6; }, { passive: false });
+card.addEventListener('contextmenu', e => {
+  e.preventDefault(); S.flipT = S.flipT ? 0 : 180; sfx('card3', .45, jitter()); renderStats();
+});
+
+let last = performance.now(), lastUi = 0;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+
+  // la carte tourne toujours ; son angle règle le réglage épinglé (un tour = toute la plage pour la teinte, une demi-plage sinon)
+  if (Math.abs(S.spinV) > .5) {
+    const d = S.spinV * dt; S.spin += d; S.spinV *= Math.exp(-2.6 * dt);
+    if (live === 'hue') P.hue = mod(S.spin, 360);
+    else { const R = RANGE[live]; nudge(live, d / 360 * (R.max - R.min) * (WRAP.has(live) ? 1 : .5)); }
+  } else S.spinV = 0;
+  const notch = Math.floor(S.spin / 15);
+  if (notch !== S.tick) { S.tick = notch; if (now - S.lastTickAt > 45) { S.lastTickAt = now; sfx('highlight1', .18, .8 + P.hue / 360 * .6); } }
+  S.visV += ((S.spin - S.vis) * 170 - S.visV * 20) * dt; S.vis += S.visV * dt;
+
+  // position : suit le doigt avec un peu de retard, sinon ressort vers sa place
+  const H = home();
+  if (S.drag) {
+    const k = Math.min(1, dt * 22);
+    const nx = S.x + (S.drag.tx - S.x) * k, ny = S.y + (S.drag.ty - S.y) * k;
+    const nvx = (nx - S.x) / dt, nvy = (ny - S.y) / dt;
+    agit += Math.min(.06, Math.hypot(nvx - S.vx, nvy - S.vy) / 60000);   // secouer = agiter
+    S.vx = nvx; S.vy = nvy; S.x = nx; S.y = ny;
+  } else {
+    S.vx += (-(S.x - H.x) * 80 - S.vx * 9) * dt; S.vy += (-(S.y - H.y) * 80 - S.vy * 9) * dt;
+    S.x += S.vx * dt; S.y += S.vy * dt;
+  }
+  S.flipV += ((S.flipT - S.flip) * 150 - S.flipV * 17) * dt; S.flip += S.flipV * dt;
+  const targetScale = S.drag ? 1.08 : S.hover ? 1.04 : 1;
+  S.scale += (targetScale - S.scale) * Math.min(1, dt * 12);
+
+  const tiltY = clamp(S.vx * .012, -28, 28) + (S.hover && !S.drag ? S.hx * 13 : 0);
+  const tiltX = clamp(-S.vy * .012, -28, 28) + (S.hover && !S.drag ? -S.hy * 13 : 0);
+  const sway = Math.sin(now / 950) * 1.4 + clamp(S.vx * .006, -14, 14);
+  card.style.transform = `translate(${S.x - CW / 2}px,${S.y - CH / 2}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)` +
+    ` rotateZ(${S.vis + sway}deg) rotateY(${S.flip}deg) scale(${S.scale})`;
+  card.style.setProperty('--mx', `${50 + tiltY * 2}%`); card.style.setProperty('--my', `${50 - tiltX * 2}%`);
+  card.style.setProperty('--sx', `${-tiltY * .6}px`); card.style.setProperty('--sy', `${14 + tiltX * .4}px`);
+
+  agit = Math.min(agit * Math.exp(-dt * .9), 1.5);
+  // Ferrolizer : le kick pousse le fluide en avant, les aigus l'éclairent, la forme glisse toute seule.
+  const [bass, treb] = hear(dt);
+  let shown = P;
+  if (music) {
+    beats(now, dt);
+    push += (bass - push) * Math.min(1, dt * 8);
+    simT += dt * P.speed * (calm * (1 + push * 3) + boost * 2.5 + agit * 2.5);
+    shown = { ...morph.step(dt, P), light: P.light * (1 + treb * .22), gr: P.gr * (1 + treb * .3) };
+  } else simT += dt * P.speed * (1 + agit * 2.5);
+  if (drift) P.pal = drift.step(dt, bass);
+  const a = music ? Math.max(agit, push * .15) : agit;
+  bg.draw(shown, simT, a, 0, innerWidth * DPR, innerHeight * DPR);
+  face.draw({ ...shown, grain: 0 }, simT, a, 7, 60, 84);
+  $('#bassBar').style.width = `${bass * 100}%`; $('#trebBar').style.width = `${treb * 100}%`;   // pas de grain : à cette taille ce n'est que du bruit
+
+  if (now - lastUi > 120) {                     // le curseur actif suit la carte, le panneau suit la palette
+    lastUi = now;
+    showValue(live); showLive(); paintPanel();
+    if (drift) { P.pal.forEach((c, i) => { inputs['pal' + i].inp.value = c; }); refreshCardChrome(); }
+    if (Math.abs(S.flip - 180) < 90) renderStats();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- habillage de la carte ----------
+function refreshCardChrome() {
+  const short = (shortName(P.name) || 'OIL').slice(0, 5).toUpperCase();
+  $('#rank').textContent = $('#rank2').textContent = short;
+  card.style.setProperty('--drop', P.pal[4]);
+  $('#backName').textContent = P.name || '—';
+}
+function renderStats() {
+  const rows = [['hue', '°'], ['sat'], ['light'], ['visc'], ['speed'], ['warp'], ['scale'], ['terr'], ['grain']];
+  $('#stats').innerHTML = rows.map(([k, u = '']) =>
+    `<dt>${t(k)}</dt><dd>${fmt(P[k], k === 'hue' ? 1 : .01)}${u}</dd>`).join('');
+}
+
+// ---------- rangée : Polychrome, Random, les fonds de départ, puis le deck gardé dans ce navigateur ----------
+const POLY = { ...PRESETS[0], name: 'Polychrome', poly: true };
+const RANDOM = { ...PRESETS[0], name: 'Random', rnd: true };
+let mine = [], drift = null;
+try { mine = (JSON.parse(localStorage.getItem('oildeck')) || []).map(c => cleanCard(c, 'Oil')).filter(Boolean); } catch {}
+const storeDeck = () => { try { localStorage.setItem('oildeck', JSON.stringify(mine)); } catch {} };
+function thumb(p) { thumbs.draw({ ...p, grain: 0 }, 12, 0, 7, 36, 50); return thumbs.canvas.toDataURL(); }
+const shortName = n => (n || '').replace(/^Glistening\s+/i, '');
+function buildHand() {
+  const box = $('#cards'); box.textContent = '';
+  for (const p of [POLY, RANDOM, ...PRESETS, ...STARTERS, ...mine]) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'mini' + (p.poly ? ' poly' : '');
+    b.innerHTML = `<img alt=""><span></span>`;
+    b.querySelector('img').src = thumb(p === RANDOM ? wildPreset() : p); b.querySelector('span').textContent = shortName(p.name);
+    b.title = p.name;
+    if (p === RANDOM) b.insertAdjacentHTML('beforeend', '<svg class="die" viewBox="0 0 24 24" aria-hidden="true"><use href="#die"/></svg>');
+    b.addEventListener('click', () => {
+      if (p.poly) { loadPreset({ ...randomPreset(), name: 'Polychrome' }, b); drift = createDrift(P.pal); }
+      else if (p === RANDOM) loadPreset(wildPreset(), b);
+      else loadPreset(p, b);
+    });
+    b.addEventListener('contextmenu', e => { e.preventDefault(); openCtx(e, p, b); });
+    box.append(b);
+  }
+  layoutHand();
+}
+
+// Éventail : les cartes se chevauchent d'autant plus qu'elles sont nombreuses ; autour du pointeur elles s'écartent.
+const MW = 72, GAP = 12;
+let handX = null;
+function layoutHand() {
+  const box = $('#cards'), cards = [...box.children], n = cards.length; if (!n) return;
+  const W = box.clientWidth - MW - 8;
+  const pitch = n > 1 ? Math.min(MW + GAP, W / (n - 1)) : 0;          // écart entre deux cartes
+  const tight = pitch < MW + GAP;
+  cards.forEach((c, i) => {
+    let x = i * pitch;
+    if (tight && handX !== null) {                                     // écarter autour du pointeur
+      const d = x + MW / 2 - handX, room = (MW + GAP - pitch) * 2.2;
+      x += Math.sign(d) * room * Math.max(0, 1 - Math.abs(d) / (MW * 2.5)) ;
+    }
+    const u = n > 1 ? i / (n - 1) - .5 : 0;                            // -0.5 .. 0.5, pour l'arc de la main
+    const rot = tight ? u * 10 : 0, lift = tight ? Math.abs(u) * Math.abs(u) * 26 : 0;
+    c.style.setProperty('--x', `${x}px`); c.style.setProperty('--r', `${rot}deg`); c.style.setProperty('--y', `${lift}px`);
+    c.style.zIndex = i + 1;
+  });
+  box.classList.toggle('tight', tight);
+}
+$('#cards').addEventListener('pointermove', e => { handX = e.clientX - $('#cards').getBoundingClientRect().left; layoutHand(); });
+$('#cards').addEventListener('pointerleave', () => { handX = null; layoutHand(); });
+addEventListener('resize', layoutHand);
+
+// Menu du clic droit sur une carte du deck : renommer, supprimer (corbeille).
+const ctx = $('#ctx');
+function openCtx(e, p, el) {
+  const own = mine.includes(p);
+  ctx.innerHTML = own
+    ? `<input id="ctxName" maxlength="40" spellcheck="false"><button type="button" data-a="rename">${t('rename')}</button>` +
+      `<button type="button" data-a="del" class="danger">${t('del')}</button>`
+    : `<p>${t('baseCard')}</p>`;
+  ctx.hidden = false;
+  const r = ctx.getBoundingClientRect();
+  ctx.style.left = `${Math.min(e.clientX, innerWidth - r.width - 8)}px`; ctx.style.top = `${e.clientY - r.height - 8}px`;
+  sfx('card3', .3, jitter());
+  if (!own) return;
+  const nameIn = $('#ctxName'); nameIn.value = p.name; nameIn.focus(); nameIn.select();
+  const rename = async () => {
+    const n = nameIn.value.trim(); if (!n || n === p.name) { ctx.hidden = true; return; }
+    p.name = n; storeDeck(); ctx.hidden = true; buildHand();
+    if (P.name === p.name) { P.name = n; $('#name').value = n; refreshCardChrome(); }
+  };
+  nameIn.addEventListener('keydown', ev => { if (ev.key === 'Enter') rename(); if (ev.key === 'Escape') ctx.hidden = true; });
+  ctx.querySelector('[data-a="rename"]').addEventListener('click', rename);
+  ctx.querySelector('[data-a="del"]').addEventListener('click', async () => {
+    mine.splice(mine.indexOf(p), 1); storeDeck(); ctx.hidden = true; buildHand();
+    say(() => t('removed')(p.name));
+  });
+}
+addEventListener('pointerdown', e => { if (!ctx.hidden && !ctx.contains(e.target)) ctx.hidden = true; });
+addEventListener('keydown', e => { if (e.key === 'Escape') ctx.hidden = true; });
+function loadPreset(p, fromEl) {
+  P = { ...clone(PRESETS[0]), ...clone(p) }; delete P.poly; delete P.rnd; ORIG = clone(P); drift = null;
+  S.spin = nearestTurn(P.hue, S.vis); S.spinV = 0; S.flipT = 0;
+  if (fromEl) {                                   // la carte part de la rangée et vole jusqu'au centre
+    const r = fromEl.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    S.x = r.left + r.width / 2 - s.left; S.y = r.top + r.height / 2 - s.top; S.vx = 0; S.vy = -900;
+  }
+  agit += .4;
+  $('#name').value = P.name;
+  document.querySelectorAll('.mini.active').forEach(e => e.classList.remove('active'));
+  if (fromEl && !fromEl.classList.contains('deck')) fromEl.classList.add('active');
+  syncControls(); refreshCardChrome(); paintPanel();
+}
+
+$('#deck').addEventListener('click', e => { loadPreset(randomPreset(), e.currentTarget); sfx('tarot1', .45, jitter()); });
+
+// ---------- garder dans le deck (localStorage) ----------
+$('#saveBtn').addEventListener('click', () => {
+  const name = $('#name').value.trim() || cardName();
+  const card = cleanCard({ ...P, name }, name);
+  const i = mine.findIndex(c => c.name === name);          // même nom = elle remplace l'ancienne
+  i >= 0 ? (mine[i] = card) : mine.push(card);
+  storeDeck(); drift = null; P.name = name; ORIG = clone(card); $('#name').value = name; refreshCardChrome();
+  buildHand(); say(() => t('saved')(name)); agit += .4;
+  const own = [...$('#cards').children].find(c => c.title === name);
+  document.querySelectorAll('.mini.active').forEach(e => e.classList.remove('active'));
+  own?.classList.add('active');
+});
+$('#resetBtn').addEventListener('click', () => {
+  P = clone(ORIG); drift = null; S.spin = nearestTurn(P.hue, S.vis); agit += .3; syncControls(); refreshCardChrome(); paintPanel();
+});
+$('#importBtn').addEventListener('click', () => $('#importFile').click());
+$('#importFile').addEventListener('change', async e => {
+  let n = 0, bad = 0;
+  for (const f of e.target.files) {
+    let c = null;
+    try { c = cleanCard(JSON.parse(await f.text()), f.name.replace(/\.json$/i, '')); } catch {}
+    if (!c) { bad++; continue; }
+    const i = mine.findIndex(m => m.name === c.name); i >= 0 ? (mine[i] = c) : mine.push(c); n++;
+  }
+  e.target.value = ''; storeDeck(); buildHand(); say(() => t('imported')(n, bad));
+});
+
+// ---------- Coulée : le panneau prend les couleurs du fond ----------
+// Même rotation de teinte que le shader (YIQ), pour que les pistes montrent ce qu'on verra.
+const hx2 = v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0');
+const rgbHex = c => '#' + c.map(hx2).join('');
+function rotC(h, deg) {
+  const [r, g, b] = hexRgb(h), a = deg * Math.PI / 180;
+  const y = .299 * r + .587 * g + .114 * b, i = .596 * r - .274 * g - .322 * b, q = .211 * r - .523 * g + .312 * b;
+  const i2 = i * Math.cos(a) - q * Math.sin(a), q2 = i * Math.sin(a) + q * Math.cos(a);
+  return rgbHex([y + .956 * i2 + .621 * q2, y - .272 * i2 - .647 * q2, y - 1.106 * i2 + 1.703 * q2]);
+}
+const satC = (h, s) => { const c = hexRgb(h), y = .299 * c[0] + .587 * c[1] + .114 * c[2]; return rgbHex(c.map(v => y + (v - y) * s)); };
+const litC = (h, l) => rgbHex(hexRgb(h).map(v => v * l));
+const mixC = (a, b, k) => rgbHex(hexRgb(a).map((v, i) => v + (hexRgb(b)[i] - v) * k));
+const sampleC = (cols, u) => { const x = clamp(u, 0, .999) * (cols.length - 1), i = Math.floor(x); return mixC(cols[i], cols[i + 1] || cols[i], x - i); };
+const shownPal = () => P.pal.map(c => litC(satC(rotC(c, P.hue), P.sat), P.light));
+function paintPanel() {
+  const pal = shownPal(), root = document.documentElement.style;
+  pal.forEach((c, i) => root.setProperty('--c' + i, c));
+  const warm = rotC(P.pal[4], P.hue);
+  for (const [k, c] of Object.entries(inputs)) {
+    if (k.startsWith('pal')) continue;
+    const R = RANGE[k], u = (P[k] - R.min) / (R.max - R.min), pc = (u * 100).toFixed(1);
+    let cols = null;
+    if (k === 'hue') cols = Array.from({ length: 13 }, (_, i) => litC(satC(rotC(P.pal[4], i * 30), P.sat), P.light));
+    if (k === 'sat') cols = [0, .5, 1, 1.5, 2].map(s => litC(satC(warm, s), P.light));
+    if (k === 'light') cols = [.4, .7, 1, 1.3, 1.6].map(l => litC(satC(warm, P.sat), l));
+    const g = `linear-gradient(90deg, ${(cols || pal).join(',')})`;
+    c.inp.style.setProperty('--track', cols ? g : `linear-gradient(90deg, transparent 0 ${pc}%, rgba(0,0,0,.5) ${pc}%), ${g}`);
+    c.inp.style.setProperty('--thumb', sampleC(cols || pal, u));
+  }
+  $('#pname').textContent = P.name || '';
+}
+
+// ---------- sélecteur de couleur : carré, teinte, code hex, pipette ----------
+const pk = { el: $('#picker'), sv: $('#pickSV'), hue: $('#pickH'), hex: $('#pickHex'), i: -1, h: 0, s: 0, v: 0 };
+function hexHsv(hex) {
+  const [r, g, b] = hexRgb(hex), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  const h = !d ? 0 : (mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+  return [h, mx ? d / mx : 0, mx];
+}
+function hsvHex(h, s, v) { const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return rgbHex([f(5), f(3), f(1)]); }
+function drawPicker() {
+  const c = pk.sv.getContext('2d'), W = pk.sv.width, H = pk.sv.height;
+  c.fillStyle = hsvHex(pk.h, 1, 1); c.fillRect(0, 0, W, H);
+  let g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+  g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+  const x = pk.s * W, y = (1 - pk.v) * H;
+  c.lineWidth = 3; c.strokeStyle = '#000'; c.beginPath(); c.arc(x, y, 7, 0, 7); c.stroke();
+  c.lineWidth = 2; c.strokeStyle = '#fff'; c.beginPath(); c.arc(x, y, 7, 0, 7); c.stroke();
+  pk.hue.value = pk.h; $('#pickSw').style.background = P.pal[pk.i];
+}
+function pickSet(hex, fromHex) {
+  P.pal[pk.i] = hex; inputs['pal' + pk.i].inp.value = hex;
+  if (!fromHex) pk.hex.value = hex.toUpperCase();
+  drawPicker(); refreshCardChrome(); paintPanel();
+}
+function openPicker(i, anchor) {
+  pk.i = i; [pk.h, pk.s, pk.v] = hexHsv(P.pal[i]);
+  pk.hex.value = P.pal[i].toUpperCase(); pk.el.hidden = false;
+  $('#pickRole').textContent = t('pal')[i];
+  const r = anchor.getBoundingClientRect(), w = pk.el.offsetWidth, h = pk.el.offsetHeight;
+  pk.el.style.left = `${clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8)}px`;
+  pk.el.style.top = `${clamp(r.top - h - 10 > 8 ? r.top - h - 10 : r.bottom + 10, 8, innerHeight - h - 8)}px`;
+  drawPicker(); pk.hex.focus(); pk.hex.select(); sfx('card3', .25, jitter());
+}
+const svAt = e => {
+  const r = pk.sv.getBoundingClientRect();
+  pk.s = clamp((e.clientX - r.left) / r.width, 0, 1); pk.v = clamp(1 - (e.clientY - r.top) / r.height, 0, 1);
+  pickSet(hsvHex(pk.h, pk.s, pk.v));
+};
+pk.sv.addEventListener('pointerdown', e => { pk.sv.setPointerCapture(e.pointerId); svAt(e); });
+pk.sv.addEventListener('pointermove', e => { if (e.buttons) svAt(e); });
+pk.hue.addEventListener('input', () => { pk.h = +pk.hue.value; pickSet(hsvHex(pk.h, pk.s, pk.v)); });
+// code hex : #RRGGBB, RRGGBB ou #RGB, appliqué dès qu'il est complet
+pk.hex.addEventListener('input', () => {
+  let v = pk.hex.value.trim().replace(/^#?/, '#');
+  if (/^#[0-9a-f]{3}$/i.test(v)) v = '#' + [...v.slice(1)].map(c => c + c).join('');
+  if (/^#[0-9a-f]{6}$/i.test(v)) { v = v.toLowerCase(); [pk.h, pk.s, pk.v] = hexHsv(v); pickSet(v, true); }
+});
+pk.hex.addEventListener('keydown', e => { if (e.key === 'Enter') pk.el.hidden = true; });
+$('#pickDrop').hidden = !window.EyeDropper;
+$('#pickDrop').addEventListener('click', async () => {
+  try { const { sRGBHex } = await new EyeDropper().open(); const v = sRGBHex.toLowerCase(); [pk.h, pk.s, pk.v] = hexHsv(v); pickSet(v); } catch {}
+});
+addEventListener('pointerdown', e => { if (!pk.el.hidden && !pk.el.contains(e.target) && !e.target.closest('.chip')) pk.el.hidden = true; });
+addEventListener('keydown', e => { if (e.key === 'Escape') pk.el.hidden = true; });
+
+// ---------- démarrage ----------
+$('#lang').addEventListener('click', () => {
+  lang = lang === 'en' ? 'fr' : 'en'; try { localStorage.setItem('lang', lang); } catch {}
+  applyLang(); sfx('button', .35);
+});
+(() => {
+  applyLang(); refreshCardChrome(); buildHand(); loadPreset(PRESETS[0]);
+  document.querySelectorAll('#cards .mini')[2]?.classList.add('active');
+  intro(!seen());
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
