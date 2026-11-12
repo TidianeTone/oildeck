@@ -217,7 +217,13 @@ h1 span { color: var(--c6); }
 .d2 .tv, .d3 .tv { inset: 10% 14% 24%; }
 .tv canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .play { position: absolute; left: 50%; top: 38%; transform: translate(-40%, -50%); border-style: solid;
-  border-color: transparent transparent transparent #ff7a59; border-width: 13px 0 13px 22px; }
+  border-color: transparent transparent transparent #ff7a59; border-width: 13px 0 13px 22px;
+  animation: press 2.4s ease-in-out infinite; }
+/* le bouton est pressé, puis la musique part : il bat, l'égaliseur monte */
+@keyframes press { 0%, 100% { transform: translate(-40%, -50%) scale(1); filter: none; }
+  10% { transform: translate(-40%, -50%) scale(.72); filter: brightness(1.4); }
+  20% { transform: translate(-40%, -50%) scale(1.12); } 30%, 90% { transform: translate(-40%, -50%) scale(1); }
+  45%, 75% { transform: translate(-40%, -50%) scale(1.08); } 60% { transform: translate(-40%, -50%) scale(.96); } }
 .eq { position: absolute; left: 0; right: 0; bottom: 8%; height: 26%; display: flex; gap: 4%; justify-content: center; align-items: flex-end; }
 .eq i { width: 6%; height: 100%; border-radius: 2px; background: linear-gradient(#ffb35c, #e8508f); transform-origin: bottom;
   animation: eq .9s ease-in-out infinite alternate; }
@@ -238,7 +244,7 @@ h1 span { color: var(--c6); }
   56%, 100% { transform: translate(330%, -55%) rotate(8deg) scale(.6); opacity: 0; } }
 #demo1 { animation: oilin 3.6s ease infinite; }
 @keyframes oilin { 0%, 50% { opacity: 0; } 58%, 92% { opacity: 1; } 100% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .eq i, .fly, #demo1 { animation: none !important; } #demo1 { opacity: 1; } .fly { display: none; } }
+@media (prefers-reduced-motion: reduce) { .eq i, .fly, .play, #demo1 { animation: none !important; } #demo1 { opacity: 1; } .fly { display: none; } }
 .steps p { margin: 10px 2px 2px; font: 700 15px var(--f-ui); display: flex; gap: 8px; align-items: baseline; }
 .steps p b { color: var(--c6); font: 800 13px var(--f-flow); }
 .specials { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
@@ -573,78 +579,48 @@ const STARTERS = [{"hue":0,"sat":1.2,"light":1.03,"visc":0.66,"speed":2.94,"warp
 // Oildeck web : l'huile qui écoute (repris de Ferrolizer), la démo 174 synthétisée, l'intro en 3 étapes.
 // Chargé avant app.js dans le même <script> : seules les déclarations tournent ici au chargement.
 const el = id => document.getElementById(id);
-let ac = null, an = null, bins = null, out = null, music = null, songEl = null, songName = '', demoTimer = 0, morph = null;
+let ac = null, an = null, bins = null, out = null, music = null, songEl = null, songName = '', morph = null;
 
 function audio() {
   if (!ac) {
     ac = new AudioContext(); an = ac.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = .4;
+    an.maxDecibels = -10; an.minDecibels = -90;   // sinon une basse de mix fort colle au plafond (-30 dB) et plus rien ne frappe
     bins = new Uint8Array(an.frequencyBinCount);
     out = ac.createGain(); out.connect(an); out.connect(ac.destination);
   }
   if (ac.state === 'suspended') ac.resume();
 }
 function startMusic(kind) {
-  stopMusic(); audio(); music = kind; morph = createMorph(); beatN = 0; lastBeat = -1e9; calm = 1; agit += .6;
+  stopMusic(); audio(); music = kind; morph = createMorph(); beatN = 0; lastBeat = lastLoud = -1e9; calm = 1; agit += .6;
   showMusic();
 }
 function stopMusic() {
-  music = null; clearInterval(demoTimer); demoTimer = 0;
-  if (songEl) { songEl.pause(); URL.revokeObjectURL(songEl.src); songEl = null; }
+  music = null;
+  if (songEl) { songEl.pause(); if (songEl.src.startsWith('blob:')) URL.revokeObjectURL(songEl.src); songEl = null; }
   showMusic();
 }
-function playSong(file) {
-  if (!file || !/^audio\//.test(file.type)) return;
+// Musique par défaut : Aether, « Homage » (homage.mp3 publié à côté de la page). Sinon un fichier déposé.
+const DEFAULT_SONG = { src: 'homage.mp3', name: 'Aether, Homage' };
+function playUrl(src, name) {
   startMusic('song');
-  songEl = new Audio(URL.createObjectURL(file)); songEl.loop = true; songName = file.name.replace(/\.[^.]+$/, '');
+  songEl = new Audio(src); songEl.loop = true; songName = name;
   ac.createMediaElementSource(songEl).connect(out);
-  songEl.play().catch(() => { stopMusic(); el('musicState').textContent = t('songErr'); });
-  songEl.onerror = () => { stopMusic(); el('musicState').textContent = t('songErr'); };
+  const fail = () => { stopMusic(); el('musicState').textContent = t('songErr'); };
+  songEl.onerror = fail; songEl.play().catch(fail);
   showMusic();
 }
-
-// ---------- démo : kick, caisse claire, charley à 174 BPM ; 32 temps, puis 8 temps de break, puis le drop ----------
-let noiseBuf = null;
-function hit(type, at) {
-  if (type === 'kick') {
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.frequency.setValueAtTime(160, at); o.frequency.exponentialRampToValueAtTime(42, at + .12);
-    g.gain.setValueAtTime(1, at); g.gain.exponentialRampToValueAtTime(.001, at + .35);
-    o.connect(g).connect(out); o.start(at); o.stop(at + .4); return;
-  }
-  if (!noiseBuf) {
-    noiseBuf = ac.createBuffer(1, ac.sampleRate * .3, ac.sampleRate);
-    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  }
-  const n = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), snare = type === 'snare';
-  n.buffer = noiseBuf; f.type = snare ? 'bandpass' : 'highpass'; f.frequency.value = snare ? 1800 : 7500;
-  const len = snare ? .18 : .04, vol = snare ? .55 : .18;
-  g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(.001, at + len);
-  n.connect(f).connect(g).connect(out); n.start(at); n.stop(at + len + .02);
-}
-function playDemo() {
-  startMusic('demo');
-  const beat = 60 / 174, half = beat / 2;
-  let step = 0, next = ac.currentTime + .1;       // un pas = une croche
-  demoTimer = setInterval(() => {
-    while (next < ac.currentTime + .15) {
-      const b = Math.floor(step / 2) % 40, on = step % 2 === 0, brk = b >= 32;
-      // ponytail: motif DnB minimal (kick 1 et 2.5+, snare 2 et 4), à remplacer par une vraie boucle si besoin
-      const bar = step % 8;
-      if (!brk && (bar === 0 || bar === 5)) hit('kick', next);
-      if (!brk && (bar === 2 || bar === 6)) hit('snare', next);
-      if (!on || brk) hit('hat', next);
-      next += half; step++;
-    }
-  }, 25);
+const playDefault = () => playUrl(DEFAULT_SONG.src, DEFAULT_SONG.name);
+function playSong(file) {
+  if (file && /^audio\//.test(file.type)) playUrl(URL.createObjectURL(file), file.name.replace(/\.[^.]+$/, ''));
 }
 
 // ---------- écoute : basses -> poussée, aigus -> lueur (mêmes réglages que Ferrolizer) ----------
-const band = { b: { pk: .05, m: 0, env: 0, hit: 0 }, t: { pk: .05, m: 0, env: 0, hit: 0 } };
+const band = { b: { pk: .05, m: 0, env: 0, hit: 0, lvl: 0 }, t: { pk: .05, m: 0, env: 0, hit: 0, lvl: 0 } };
 function follow(o, raw, dt) {
   o.pk = Math.max(raw, o.pk * Math.exp(-dt / 4), .04);
   o.m += (raw - o.m) * Math.min(1, dt * 2.5);
   const hit = o.hit = clamp((raw - o.m) / (o.m * .15 + .01), 0, 1);
-  const x = .25 * raw / o.pk + .75 * hit;
+  const x = .25 * (o.lvl = raw / o.pk) + .75 * hit;
   o.env += (x - o.env) * Math.min(1, dt * (x > o.env ? 30 : 4));
   return o.env;
 }
@@ -657,28 +633,30 @@ function hear(dt) {
   };
   return [follow(band.b, avg(35, 150), dt), follow(band.t, avg(3000, 11000), dt)];
 }
-// Toutes les 32 frappes, nouvelle forme. Plus de kick pendant 2 s : break, l'huile se calme. Le kick revient : drop.
-let beatN = 0, lastBeat = -1e9, calm = 1, boost = 0, push = 0;
+// Toutes les 32 frappes, nouvelle forme. Plus de basse pendant 2 s : break, l'huile se calme. La basse revient : drop.
+// Le break se juge sur la présence de la basse, pas sur les kicks : une basse tenue (reese, sub) sans kick sec n'est pas un break.
+let beatN = 0, lastBeat = -1e9, lastLoud = -1e9, calm = 1, boost = 0, push = 0;
 function beats(now, dt) {
-  if (band.b.hit > .6 && now - lastBeat > 220) {
-    if (beatN > 0 && now - lastBeat > 2000) { morph.jump(); boost = 1; beatN = 1; }
-    else if (++beatN % 32 === 0) morph.jump();
-    lastBeat = now;
+  if (band.b.lvl > .6) {
+    if (lastLoud > 0 && now - lastLoud > 2000) { morph.jump(); boost = 1; beatN = 0; }
+    lastLoud = now;
   }
-  calm += ((now - lastBeat > 2000 ? .4 : 1) - calm) * Math.min(1, dt * 1.2);
+  if (band.b.hit > .6 && now - lastBeat > 220) { if (++beatN % 32 === 0) morph.jump(); lastBeat = now; }
+  calm += ((now - lastLoud > 2000 ? .4 : 1) - calm) * Math.min(1, dt * 1.2);
   boost *= Math.exp(-dt * 1.2);
 }
 
 function showMusic() {
-  el('demoBtn').textContent = music === 'demo' ? t('stop') : t('demo');
-  el('songBtn').textContent = music === 'song' ? t('stop') : t('song');
-  el('demoBtn').setAttribute('aria-pressed', music === 'demo');
-  el('songBtn').setAttribute('aria-pressed', music === 'song');
-  el('musicState').textContent = music === 'demo' ? t('demoOn') : music === 'song' ? t('songOn')(songName) : t('noMusic');
+  const def = music && songName === DEFAULT_SONG.name, own = music && !def;
+  el('demoBtn').textContent = def ? t('stop') : t('demo');
+  el('songBtn').textContent = own ? t('stop') : t('song');
+  el('demoBtn').setAttribute('aria-pressed', !!def);
+  el('songBtn').setAttribute('aria-pressed', !!own);
+  el('musicState').textContent = music ? t('songOn')(songName) : t('noMusic');
   el('songBtn').title = t('dropSong');
 }
-el('demoBtn').addEventListener('click', () => (music === 'demo' ? stopMusic() : playDemo()));
-el('songBtn').addEventListener('click', () => (music === 'song' ? stopMusic() : el('songFile').click()));
+el('demoBtn').addEventListener('click', () => (music && songName === DEFAULT_SONG.name ? stopMusic() : playDefault()));
+el('songBtn').addEventListener('click', () => (music && songName !== DEFAULT_SONG.name ? stopMusic() : el('songFile').click()));
 el('songFile').addEventListener('change', e => { playSong(e.target.files[0]); e.target.value = ''; });
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => {
@@ -707,7 +685,7 @@ function intro(on) {
     demos[1].draw(PRESETS[2], 30 + dT * (1 + beat * 2), beat * .9, 0, 200, 112);
   })(performance.now());
 }
-el('introGo').addEventListener('click', () => { intro(false); try { localStorage.setItem('oildeck-intro', '1'); } catch {} });
+el('introGo').addEventListener('click', () => { intro(false); if (!music) playDefault(); try { localStorage.setItem('oildeck-intro', '1'); } catch {} });
 el('help').addEventListener('click', () => intro(true));
 
 ;
@@ -731,12 +709,12 @@ const T = {
     scale: 'Density', stretch: 'Stretch', angle: 'Angle', terr: 'Terraces', steps: 'Steps', grain: 'Grain',
     gr: 'Glow radius', warm: 'Warm side',
     pal: ['Shadow', 'Mid', 'Cool', 'Cool 2', 'Warm', 'Glow', 'Core'],
-    demo: 'Play the 174 demo', song: 'Play my song', stop: 'Stop',
+    demo: 'Play Homage', song: 'Play my song', stop: 'Stop',
     noMusic: 'No music: the oil only moves when you throw the card.', demoOn: '174 BPM demo beat, with a break every 32 beats.',
     songOn: n => `Playing: ${n}`, songErr: 'This file could not be played. Try an mp3, ogg or wav.', dropSong: 'Drop a song anywhere on the page.',
     importBtn: 'Import cards (.json)', imported: (n, bad) => `${n} card${n === 1 ? '' : 's'} imported${bad ? `, ${bad} file${bad === 1 ? '' : 's'} skipped` : ''}.`,
     tune: 'Tune', go: 'Play',
-    step1: 'Grab the card and throw it.', step2: 'Drop a song (or play the demo).', step3: 'Watch the sound.',
+    step1: 'Grab the card and throw it.', step2: 'Play the music, or drop your own song.', step3: 'Watch the sound.',
     specials: 'Polychrome: colors that drift on their own. Random: a wild roll every time. Each dice rolls one group. Save to deck keeps what you see, in this browser.' },
   fr: { hint: 'Glisser et lancer : agiter  ·  Molette sur la carte : régler  ·  Clic sur la face : placer la lueur  ·  Clic droit : retourner',
     liveTip: 'Molette sur la carte', liveTag: 'carte', resetTip: 'Double-clic : retour à la valeur de la carte', hex: 'Hex', eyedrop: "Prendre une couleur à l'écran",
@@ -748,12 +726,12 @@ const T = {
     scale: 'Densité', stretch: 'Étirement', angle: 'Angle', terr: 'Gradins', steps: 'Crans', grain: 'Grain',
     gr: 'Rayon lueur', warm: 'Côté chaud',
     pal: ['Ombre', 'Milieu', 'Froid', 'Froid 2', 'Chaud', 'Lueur', 'Coeur'],
-    demo: 'Lancer la démo 174', song: 'Lancer ma musique', stop: 'Stop',
+    demo: 'Lancer Homage', song: 'Lancer ma musique', stop: 'Stop',
     noMusic: "Pas de musique : l'huile ne bouge que quand tu lances la carte.", demoOn: 'Rythme de démo à 174 BPM, avec un break toutes les 32 frappes.',
     songOn: n => `En lecture : ${n}`, songErr: 'Ce fichier ne se lit pas. Essaie un mp3, ogg ou wav.', dropSong: "Lâche une musique n'importe où sur la page.",
     importBtn: 'Importer des cartes (.json)', imported: (n, bad) => `${n} carte${n > 1 ? 's' : ''} importée${n > 1 ? 's' : ''}${bad ? `, ${bad} fichier${bad > 1 ? 's' : ''} ignoré${bad > 1 ? 's' : ''}` : ''}.`,
     tune: 'Régler', go: 'Jouer',
-    step1: 'Attrape la carte et lance-la.', step2: 'Lâche une musique (ou lance la démo).', step3: 'Regarde le son.',
+    step1: 'Attrape la carte et lance-la.', step2: 'Lance la musique, ou lâche la tienne.', step3: 'Regarde le son.',
     specials: 'Polychrome : des couleurs qui dérivent toutes seules. Random : un tirage sauvage à chaque fois. Chaque dé tire un groupe. Garder dans le deck range ce que tu vois, dans ce navigateur.' },
 };
 let lang = 'en';
